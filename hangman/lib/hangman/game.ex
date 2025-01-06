@@ -16,6 +16,8 @@ defmodule Hangman.Game do
     cond do
       MapSet.member?(game.guessed_letters, letter) ->
         {:already_guessed, game}
+      !Regex.match?(~r/^[a-z]$/, letter) ->
+        {:invalid_guessed, game}
       true ->
         game = %{game | guessed_letters: MapSet.put(game.guessed_letters, letter)}
         game =

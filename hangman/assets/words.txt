@@ -1,0 +1,8 @@
+apple
+ball
+cat
+date
+gate
+elephant
+static
+brain
