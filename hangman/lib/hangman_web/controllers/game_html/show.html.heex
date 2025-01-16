@@ -1,16 +1,5 @@
-<style>
-  h1 {
-    font-size: 2.25rem;
-    font-weight: bold;
-    margin-bottom: 2rem;
-    color:#0948ab;
-    text-align: center;
-  }
-</style>
-
-<h1>Hangman</h1>
 <div class="container mx-auto px-4 py-8">
-  
+  <h1 class="text-4xl font-bold mb-8">Phoenix Hangman</h1>
 
   <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
     <div>
@@ -30,12 +19,12 @@
             <p class="text-red-600 font-bold">Game Over! The word was: <%= @game.word %></p>
           <% end %>
           
-          <.link href={~p"/new"} class="mt-4 inline-block bg-blue-500 text-white px-4 py-2 rounded">
+          <.link href={~p"/game/new"} class="mt-4 inline-block bg-blue-500 text-white px-4 py-2 rounded">
             New Game
           </.link>
         </div>
       <% else %>
-        <.form for={%{}} action={~p"/"} method="post" class="mt-8">
+        <.form for={%{}} action={~p"/game"} method="post" class="mt-8">
           <div class="flex gap-4">
             <input type="text" name="guess" maxlength="1" required
                    class="border rounded px-2 py-1 w-16 text-center"

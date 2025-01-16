@@ -26,10 +26,6 @@ defmodule HangmanWeb.GameController do
         conn
         |> put_flash(:error, "Letter already guessed!")
         |> redirect(to: ~p"/game")
-      {:invalid_guessed, _game} ->
-        conn
-        |> put_flash(:error, "Invalid Guess")
-        |> redirect(to: ~p"/")
     end
   end
 end
