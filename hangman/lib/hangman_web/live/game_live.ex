@@ -276,10 +276,10 @@ defmodule HangmanWeb.GameLive do
         class="brand"
         aria-label="Back to menu"
       >
-        Hangman<span class="hidden sm:inline"><span class="text-ember">·</span> <em>in Phoenix</em></span>
+        Hangman<span class="hidden sm:inline"><span class="mx-1 text-ember">·</span><em>in Phoenix</em></span>
       </button>
       <div :if={@screen == :menu} class="brand">
-        Hangman<span class="hidden sm:inline"><span class="text-ember">·</span> <em>in Phoenix</em></span>
+        Hangman<span class="hidden sm:inline"><span class="mx-1 text-ember">·</span><em>in Phoenix</em></span>
       </div>
       <dl class="stats" id="stats-bar">
         <div>
