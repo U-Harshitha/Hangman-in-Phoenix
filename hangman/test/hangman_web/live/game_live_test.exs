@@ -11,30 +11,67 @@ defmodule HangmanWeb.GameLiveTest do
     assert text_response(get(conn, "/hangman/health"), 200) == "ok"
   end
 
-  test "pick a category and difficulty, then play a full round", %{conn: conn} do
+  test "pick a channel and difficulty, then play a full episode", %{conn: conn} do
     {:ok, view, html} = live(conn, "/hangman")
-    assert html =~ "Choose a category"
+    assert html =~ "Sitcom"
 
-    view |> element("button[phx-value-category=space]") |> render_click()
+    view |> element("button[phx-value-channel=big_bang]") |> render_click()
     view |> element("button[phx-value-difficulty=hard]") |> render_click()
-    assert view |> element("#play") |> render() =~ "Play Space"
+    assert view |> element(".tv-lower-third") |> render() =~ "The Big Bang Theory"
 
     view |> element("#play") |> render_click()
     assert has_element?(view, "#word")
-    assert has_element?(view, ".chip", "Space")
+    assert has_element?(view, ".ep-show", "Big Bang Theory")
+    assert has_element?(view, ".clue-text")
+    assert has_element?(view, "#mascot[data-show=big_bang]")
 
-    # Guess every letter of the alphabet via the physical keyboard handler;
-    # the round must end (won or lost) and show the result dialog.
     for letter <- Hangman.Game.alphabet() do
       render_keydown(view, "key", %{"key" => letter})
     end
 
     assert has_element?(view, "#result")
-    assert has_element?(view, "#stats-bar [data-stat=score]")
+    assert has_element?(view, ".result-fact")
 
-    # Enter starts the next round.
     render_keydown(view, "key", %{"key" => "Enter"})
     refute has_element?(view, "#result")
+  end
+
+  test "arrow keys flip channels on the TV guide", %{conn: conn} do
+    {:ok, view, _html} = live(conn, "/hangman")
+    assert has_element?(view, ".guide-row.is-selected[data-show=friends]")
+    render_keydown(view, "key", %{"key" => "ArrowRight"})
+    assert has_element?(view, ".guide-row.is-selected[data-show=big_bang]")
+    render_keydown(view, "key", %{"key" => "ArrowLeft"})
+    render_keydown(view, "key", %{"key" => "ArrowLeft"})
+    assert has_element?(view, ".guide-row.is-selected[data-show=surf]")
+  end
+
+  test "channel surfing plays a real show", %{conn: conn} do
+    {:ok, view, _html} = live(conn, "/hangman")
+    view |> element("button[phx-value-channel=surf]") |> render_click()
+    view |> element("#play") |> render_click()
+
+    assert view |> element("#mascot") |> render() =~
+             ~r/data-show="(friends|big_bang|modern_family|brooklyn_99)"/
+  end
+
+  test "x-ray mode shows the process, real code and lessons", %{conn: conn} do
+    {:ok, view, _html} = live(conn, "/hangman")
+    refute has_element?(view, "#xray-panel")
+
+    view |> element("#xray-toggle") |> render_click()
+    assert has_element?(view, "#xray-panel")
+    assert render(view) =~ "#PID&lt;"
+
+    view |> element("#play") |> render_click()
+    view |> element(".pin[phx-value-section=word]") |> render_click()
+    assert has_element?(view, ".xp-code", "def tiles")
+
+    view |> element(".xp-tabs button[phx-value-tab=lessons]") |> render_click()
+    assert has_element?(view, ".lesson")
+
+    render_keydown(view, "key", %{"key" => "Escape"})
+    refute has_element?(view, "#xray-panel")
   end
 
   test "stats are restored from connect params", %{conn: conn} do

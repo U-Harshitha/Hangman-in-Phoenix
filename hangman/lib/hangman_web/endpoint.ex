@@ -8,12 +8,15 @@ defmodule HangmanWeb.Endpoint do
     same_site: "Lax"
   ]
 
+  # xray:socket
   # Long-polling matters here: Vercel rewrites don't proxy WebSockets, so
   # when the game is opened through the portfolio domain the client falls
   # back to HTTP long-polling automatically (see assets/js/app.js).
   socket "/hangman/live", Phoenix.LiveView.Socket,
     websocket: [connect_info: [session: @session_options]],
     longpoll: [connect_info: [session: @session_options]]
+
+  # xray:end
 
   plug Plug.Static,
     at: "/",

@@ -7,20 +7,22 @@
     <meta name="theme-color" content="#0b0c12" />
     <meta
       name="description"
-      content="Hangman, rebuilt with Elixir & Phoenix LiveView. Guess the word before the last flame goes out."
+      content="Sitcom Hangman: Friends, The Big Bang Theory, Modern Family and Brooklyn Nine-Nine trivia, built with Elixir & Phoenix LiveView."
     />
-    <meta property="og:title" content="Hangman · in Phoenix" />
+    <meta property="og:title" content="Sitcom Hangman · built in Phoenix" />
     <meta
       property="og:description"
-      content="A real-time word game built with Elixir, Phoenix LiveView, GSAP and Three.js."
+      content="A sitcom trivia word game with an X-ray mode that shows how Phoenix LiveView works."
     />
-    <.live_title default="Hangman" suffix=" · in Phoenix">{assigns[:page_title]}</.live_title>
+    <.live_title default="Sitcom Hangman" suffix=" · built in Phoenix">
+      {assigns[:page_title]}
+    </.live_title>
     <link rel="icon" type="image/svg+xml" href={~p"/hangman/images/favicon.svg"} />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700;9..144,900&family=Space+Grotesk:wght@400;500;600;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Space+Grotesk:wght@400;500;600;700&family=VT323&family=Caveat:wght@600;700&family=JetBrains+Mono:wght@400;600&display=swap"
     />
     <link phx-track-static rel="stylesheet" href={~p"/hangman/assets/css/app.css"} />
     <script defer phx-track-static type="module" src={~p"/hangman/assets/js/app.js"}>
