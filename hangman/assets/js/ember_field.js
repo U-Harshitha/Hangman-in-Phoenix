@@ -17,6 +17,15 @@ import {
 import {gsap, reducedMotion} from "./motion"
 
 const HEIGHT = 34
+// Each channel has its own palette; "calm" is whichever show is on air.
+const THEMES = {
+  friends: {a: "#ffb347", b: "#f2c94c"},
+  big_bang: {a: "#4cc9f0", b: "#e0fbfc"},
+  modern_family: {a: "#7bd389", b: "#ffd166"},
+  brooklyn_99: {a: "#3a86ff", b: "#ffd23f", siren: true},
+  surf: {a: "#c8c8d8", b: "#ffffff"},
+}
+
 const MOODS = {
   calm: {a: "#ff6a2b", b: "#ffd479"},
   miss: {a: "#ff2d55", b: "#ff7a59"},
@@ -175,12 +184,30 @@ export class EmberField {
     this.renderer.render(this.scene, this.camera)
   }
 
+  // Switch channel palette. Brooklyn gets red/blue siren pulses.
+  theme(show) {
+    const theme = THEMES[show]
+    if (!theme) return
+    MOODS.calm = theme
+    this.siren?.kill()
+    this.siren = null
+    this.mood("calm", 1)
+  }
+
+  startSiren(delay) {
+    if (!MOODS.calm.siren) return
+    this.siren?.kill()
+    const red = new Color("#ff3b3b")
+    this.siren = gsap.to(this.uniforms.uColorB.value, {r: red.r, g: red.g, b: red.b, duration: 0.55, yoyo: true, repeat: -1, ease: "steps(1)", delay})
+  }
+
   mood(name, duration = 0.8) {
     const {a, b} = MOODS[name]
     const ca = new Color(a)
     const cb = new Color(b)
     gsap.to(this.uniforms.uColorA.value, {r: ca.r, g: ca.g, b: ca.b, duration, overwrite: "auto"})
     gsap.to(this.uniforms.uColorB.value, {r: cb.r, g: cb.g, b: cb.b, duration, overwrite: "auto"})
+    if (name === "calm") this.startSiren(duration)
   }
 
   surge(speed, size, duration = 1.2) {
@@ -191,8 +218,14 @@ export class EmberField {
       .to(this.uniforms.uSize, {value: 9, duration, ease: "power2.inOut"}, "<")
   }
 
-  react({kind}) {
+  react({kind, show}) {
+    if (show && (kind === "start" || kind === "menu" || kind === "channel")) this.theme(show)
+
     switch (kind) {
+      case "channel":
+        this.mood("calm", 0.6)
+        this.surge(4, 12, 0.8)
+        break
       case "start":
       case "menu":
         this.mood("calm", 1.2)
@@ -222,6 +255,7 @@ export class EmberField {
   }
 
   destroy() {
+    this.siren?.kill()
     this.stop()
     window.removeEventListener("resize", this.onResize)
     window.removeEventListener("pointermove", this.onPointer)

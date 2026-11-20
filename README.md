@@ -1,25 +1,53 @@
-# Hangman · in Phoenix
+# Sitcom Hangman · built in Phoenix
 
-A real-time word game built with **Elixir**, **Phoenix LiveView**, **GSAP** and **Three.js**.
-Guess the word one letter at a time; every miss puts out one of six flames.
+A sitcom trivia word game built with **Elixir**, **Phoenix LiveView**, **GSAP** and **Three.js**,
+plus an **X-ray mode** that opens up the page and shows how Phoenix makes it work.
 
 **Play:** https://harshitha-upadhyayula.vercel.app/hangman
 
-- Six categories (Classic, Animals, Food, Countries, Tech, Space) and three difficulties
-- Physical keyboard support (`a`–`z` to guess, `Enter` next word, `?` hint, `Esc` menu)
-- Score, streaks and win rate, kept in `localStorage` and re-validated on the server
-- Animated chalk-drawn gallows, flipping letter tiles and a WebGL ember field that reacts to every guess
-- Respects `prefers-reduced-motion`, works on phones, and degrades gracefully without WebGL
+## The channels
+
+| CH | Show | Instead of a hangman… | You lose when… |
+| --- | --- | --- | --- |
+| 01 | Friends | Marcel hangs from a rope above the orange couch | he lets go and heads for the San Diego Zoo |
+| 02 | The Big Bang Theory | an atom builds up on Sheldon's whiteboard | it reaches critical mass: **BANG!** |
+| 03 | Modern Family | Fizbo the clown assembles himself on the lawn | Fizbo arrives (HONK) |
+| 04 | Brooklyn Nine-Nine | Cheddar wanders into a police lineup | Cheddar gets booked |
+| 00 | Channel surf | a different show every episode | |
+
+- 160+ trivia answers, each with a clue that doubles as a fun fact (`priv/words/<show>.txt`, one `answer | clue` per line)
+- TV-guide menu with channel static, per-episode title cards ("The One With the Missing Letters"),
+  closed-caption audience reactions and show-specific catchphrases
+- Each channel retints the whole page and the Three.js background (Brooklyn gets siren lights)
+- Keyboard play: `a`–`z` guess, `Enter` next episode, `?` hint, `Esc` back, `←`/`→` change channel
+- Score and streaks in `localStorage`, re-validated on the server
+
+All artwork is original. The shows are referenced through trivia, with no official logos, fonts or music.
+
+## X-ray mode
+
+Press **X-ray** in the header and the page turns into a blueprint:
+
+- **Numbered pins** on the game explain what each part does in Phoenix. Each pin shows the real code
+  behind it, which is extracted from the source files at compile time (`HangmanWeb.Xray.Source`),
+  so it can't drift from what's running.
+- **Live process facts**: the Erlang PID serving *your* game, its memory, the number of processes on
+  the node, and whether you're on a WebSocket or long-polling (through Vercel it's long-polling).
+- **Live wire**: every message between the browser and the server, with byte sizes and round-trip
+  times. You can watch a key press go up as a tiny event and come back as a small diff.
+- **What I learned**: lessons from picking up Phoenix and Elixir for this project. Edit them in
+  `lib/hangman_web/xray.ex` (`@lessons`).
 
 ## How it's built
 
 | Layer | What |
 | --- | --- |
 | Game rules | `Hangman.Game`: a pure, immutable struct with fully unit-tested rules |
-| Words | `Hangman.Words`: word lists in `priv/words/*.txt`, compiled into the module |
-| UI | `HangmanWeb.GameLive`: one LiveView; pushes `fx` events describing each move |
-| Motion | `assets/js/hooks/board.js` (GSAP) and `assets/js/ember_field.js` (Three.js, lazy-loaded) |
-| Styling | Tailwind CSS v4 with a small set of design tokens in `assets/css/app.css` |
+| Content | `Hangman.Shows`: channels, catchphrases and trivia compiled in from `priv/words/` |
+| UI | `HangmanWeb.GameLive`: one LiveView that pushes `fx` events describing each move |
+| Mascots | `HangmanWeb.Mascots`: SVG sets drawn part by part by a GSAP hook |
+| Motion | `assets/js/hooks/*.js` (GSAP) and `assets/js/ember_field.js` (Three.js, lazy-loaded) |
+| X-ray | `HangmanWeb.Xray` (content, live BEAM stats) and `assets/js/wire.js` (socket traffic) |
 
 Everything is served under the `/hangman` path, so the app can sit behind the portfolio's domain.
 

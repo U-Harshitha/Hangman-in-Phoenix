@@ -24,7 +24,8 @@ defmodule Hangman.Game do
   @type status :: :playing | :won | :lost
   @type t :: %__MODULE__{
           word: String.t(),
-          category: atom(),
+          show: atom(),
+          clue: String.t() | nil,
           difficulty: difficulty(),
           guessed: MapSet.t(String.t()),
           misses: [String.t()],
@@ -36,7 +37,8 @@ defmodule Hangman.Game do
 
   @enforce_keys [:word]
   defstruct word: "",
-            category: :classic,
+            show: :friends,
+            clue: nil,
             difficulty: :normal,
             guessed: MapSet.new(),
             misses: [],
@@ -45,7 +47,7 @@ defmodule Hangman.Game do
             hints_used: 0,
             status: :playing
 
-  @doc "Start a new game for `word`. Options: `:category`, `:difficulty`."
+  @doc "Start a new game for `word`. Options: `:show`, `:clue`, `:difficulty`."
   @spec new(String.t(), keyword()) :: t()
   def new(word, opts \\ []) when is_binary(word) do
     word = word |> String.trim() |> String.downcase()
@@ -58,7 +60,8 @@ defmodule Hangman.Game do
 
     %__MODULE__{
       word: word,
-      category: Keyword.get(opts, :category, :classic),
+      show: Keyword.get(opts, :show, :friends),
+      clue: Keyword.get(opts, :clue),
       difficulty: difficulty,
       hints_left: hints_for(difficulty)
     }

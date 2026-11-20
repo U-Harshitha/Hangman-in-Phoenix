@@ -8,6 +8,7 @@ export const Scene = {
       .then(({EmberField}) => {
         if (this.gone) return
         this.field = new EmberField(this.el)
+        this.field.theme(document.querySelector("#app")?.dataset.show)
         this.el.animate([{opacity: 0}, {opacity: 1}], {duration: 1200, easing: "ease-out"})
       })
       .catch((err) => {
