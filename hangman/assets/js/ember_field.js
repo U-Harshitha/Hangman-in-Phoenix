@@ -1,11 +1,14 @@
-// A field of rising embers rendered with Three.js, behind the whole app.
+// Soft motes of coloured light drifting up through the studio, rendered
+// with Three.js behind the whole app.
 //
 // It's a single THREE.Points draw call; motion happens in the vertex
 // shader, so the CPU only advances one clock. Game events nudge a few
-// uniforms (speed, size, colour) with GSAP for the mood changes.
+// uniforms (speed, size, colour) with GSAP for the mood changes. On the
+// light studio background they're blended normally (not additively), so
+// they read as out-of-focus confetti in the channel's colour.
 import {
-  AdditiveBlending,
   BufferAttribute,
+  NormalBlending,
   BufferGeometry,
   Color,
   PerspectiveCamera,
@@ -19,19 +22,21 @@ import {gsap, reducedMotion} from "./motion"
 const HEIGHT = 34
 // Each channel has its own palette; "calm" is whichever show is on air.
 const THEMES = {
-  friends: {a: "#ffb347", b: "#f2c94c"},
-  big_bang: {a: "#4cc9f0", b: "#e0fbfc"},
-  modern_family: {a: "#7bd389", b: "#ffd166"},
-  brooklyn_99: {a: "#3a86ff", b: "#ffd23f", siren: true},
-  surf: {a: "#c8c8d8", b: "#ffffff"},
+  friends: {a: "#8e5bd8", b: "#f2b705"},
+  big_bang: {a: "#3a9ad9", b: "#8fd0f5"},
+  modern_family: {a: "#4caf50", b: "#f2b705"},
+  brooklyn_99: {a: "#3a86ff", b: "#f2b705", siren: true},
+  surf: {a: "#8e5bd8", b: "#3a9ad9"},
 }
 
 const MOODS = {
-  calm: {a: "#ff6a2b", b: "#ffd479"},
-  miss: {a: "#ff2d55", b: "#ff7a59"},
-  win: {a: "#ffd479", b: "#fff3c4"},
-  lose: {a: "#5a6478", b: "#9aa3b5"},
+  calm: {a: "#8e5bd8", b: "#f2b705"},
+  miss: {a: "#e5432f", b: "#ff8a6b"},
+  win: {a: "#f2b705", b: "#ffcd2e"},
+  lose: {a: "#8b8a93", b: "#b5b4bb"},
 }
+
+const BASE = 0.42
 
 const vertexShader = /* glsl */ `
   uniform float uTime;
@@ -72,7 +77,7 @@ const fragmentShader = /* glsl */ `
     float core = smoothstep(0.5, 0.0, d);
     float glow = pow(core, 2.2);
     vec3 color = mix(uColorA, uColorB, vSeed * 0.8 + glow * 0.4);
-    float alpha = glow * (0.25 + 0.75 * vLife) * uIntensity;
+    float alpha = core * (0.2 + 0.8 * vLife) * uIntensity;
     if (alpha < 0.01) discard;
     gl_FragColor = vec4(color, alpha);
   }
@@ -89,7 +94,7 @@ export class EmberField {
     this.camera = new PerspectiveCamera(55, 1, 0.1, 100)
     this.camera.position.set(0, 0, 18)
 
-    const count = window.innerWidth < 640 ? 420 : 900
+    const count = window.innerWidth < 640 ? 120 : 260
     const positions = new Float32Array(count * 3)
     const seeds = new Float32Array(count)
     const speeds = new Float32Array(count)
@@ -107,10 +112,10 @@ export class EmberField {
 
     this.uniforms = {
       uTime: {value: 0},
-      uSize: {value: 9},
+      uSize: {value: 11},
       uPixelRatio: {value: Math.min(window.devicePixelRatio, 2)},
       uHeight: {value: HEIGHT},
-      uIntensity: {value: 0.9},
+      uIntensity: {value: BASE},
       uColorA: {value: new Color(MOODS.calm.a)},
       uColorB: {value: new Color(MOODS.calm.b)},
     }
@@ -120,7 +125,7 @@ export class EmberField {
       fragmentShader,
       transparent: true,
       depthWrite: false,
-      blending: AdditiveBlending,
+      blending: NormalBlending,
     })
     this.points = new Points(geometry, this.material)
     this.scene.add(this.points)
@@ -215,7 +220,7 @@ export class EmberField {
       .to(this, {speed, duration: 0.25, ease: "power2.out"})
       .to(this.uniforms.uSize, {value: size, duration: 0.25, ease: "power2.out"}, 0)
       .to(this, {speed: 1, duration, ease: "power2.inOut"})
-      .to(this.uniforms.uSize, {value: 9, duration, ease: "power2.inOut"}, "<")
+      .to(this.uniforms.uSize, {value: 11, duration, ease: "power2.inOut"}, "<")
   }
 
   react({kind, show}) {
@@ -224,32 +229,32 @@ export class EmberField {
     switch (kind) {
       case "channel":
         this.mood("calm", 0.6)
-        this.surge(4, 12, 0.8)
+        this.surge(4, 14, 0.8)
         break
       case "start":
       case "menu":
         this.mood("calm", 1.2)
-        gsap.to(this.uniforms.uIntensity, {value: 0.9, duration: 1})
-        this.surge(2.2, 10, 1.4)
+        gsap.to(this.uniforms.uIntensity, {value: BASE, duration: 1})
+        this.surge(2.2, 13, 1.4)
         break
       case "hit":
       case "hint":
-        this.surge(3.2, 12)
+        this.surge(3.2, 14)
         break
       case "miss":
         this.mood("miss", 0.15)
         gsap.delayedCall(0.45, () => this.mood("calm", 1))
-        this.surge(0.4, 8, 1)
+        this.surge(0.4, 10, 1)
         break
       case "win":
         this.mood("win", 0.4)
-        gsap.to(this.uniforms.uIntensity, {value: 1.4, duration: 0.4})
-        this.surge(7, 16, 3)
+        gsap.to(this.uniforms.uIntensity, {value: 0.75, duration: 0.4})
+        this.surge(7, 18, 3)
         break
       case "lose":
         this.mood("lose", 1.6)
-        gsap.to(this.uniforms.uIntensity, {value: 0.5, duration: 1.6})
-        this.surge(0.25, 7, 2.5)
+        gsap.to(this.uniforms.uIntensity, {value: 0.22, duration: 1.6})
+        this.surge(0.25, 9, 2.5)
         break
     }
   }

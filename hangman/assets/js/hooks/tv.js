@@ -54,11 +54,13 @@ export const Tv = {
     const picture = this.el.querySelector(".tv-picture")
 
     if (this.channel === "surf") {
+      this.wiggle(first)
       this.stopSurf = playStatic(canvas, 0, {loop: !reducedMotion()})
       gsap.set(canvas, {autoAlpha: 0.55})
       return
     }
 
+    this.wiggle(first)
     playStatic(canvas, first ? 500 : 320)
     gsap.fromTo(
       picture,
@@ -66,6 +68,21 @@ export const Tv = {
       {scaleY: 1, scaleX: 1, filter: "brightness(1)", duration: 0.45, delay: first ? 0.35 : 0.18, ease: "expo.out", clearProps: "all"},
     )
     gsap.fromTo(this.el.querySelector(".tv-lower-third"), {xPercent: -12, opacity: 0}, {xPercent: 0, opacity: 1, duration: 0.5, delay: 0.3, ease: "power3.out", clearProps: "all"})
+  },
+
+  // The rabbit ears wobble when the channel changes, and the OSD number
+  // pops up then fades, like a real set.
+  wiggle(first) {
+    const [left, right] = this.el.querySelectorAll(".tv-antenna i")
+    if (left && !first) {
+      gsap.fromTo(left, {rotation: -38}, {rotation: -28, transformOrigin: "50% 100%", duration: 1.1, ease: "elastic.out(1.3, 0.25)"})
+      gsap.fromTo(right, {rotation: 32}, {rotation: 22, transformOrigin: "50% 100%", duration: 1.2, ease: "elastic.out(1.3, 0.22)"})
+    }
+    gsap.fromTo(
+      this.el.querySelector(".tv-osd"),
+      {autoAlpha: 1},
+      {autoAlpha: 0, duration: 0.5, delay: first ? 2.4 : 1.8, ease: "power1.in", overwrite: true},
+    )
   },
 
   destroyed() {

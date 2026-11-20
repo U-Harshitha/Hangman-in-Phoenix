@@ -16,9 +16,14 @@ plus an **X-ray mode** that opens up the page and shows how Phoenix makes it wor
 | 00 | Channel surf | a different show every episode | |
 
 - 160+ trivia answers, each with a clue that doubles as a fun fact (`priv/words/<show>.txt`, one `answer | clue` per line)
-- TV-guide menu with channel static, per-episode title cards ("The One With the Missing Letters"),
-  closed-caption audience reactions and show-specific catchphrases
-- Each channel retints the whole page and the Three.js background (Brooklyn gets siren lights)
+- Styled to sit next to the portfolio: the same light studio, type (Bricolage Grotesque,
+  Instrument Sans, JetBrains Mono, Kalam), haldi accent and part colours (one per show)
+- A TV guide with a gliding remote cursor and programme progress, and a retro TV with rabbit ears,
+  a channel dial that turns to the current channel, static between channels and an on-screen display
+- Laptop keycaps for the keyboard (hits turn haldi, misses stay pressed down) and keycap slots for
+  the answer: a found letter rises out of its slot and clicks into place
+- Per-episode title cards ("The One With the Missing Letters") and closed-caption audience reactions
+- Each channel recolours the guide, the lower third and the Three.js light motes (Brooklyn gets sirens)
 - Keyboard play: `a`–`z` guess, `Enter` next episode, `?` hint, `Esc` back, `←`/`→` change channel
 - Score and streaks in `localStorage`, re-validated on the server
 
@@ -26,16 +31,26 @@ All artwork is original. The shows are referenced through trivia, with no offici
 
 ## X-ray mode
 
-Press **X-ray** in the header and the page turns into a blueprint:
+Press **X-ray** in the header and the page turns into a blueprint (same teal, dashed outlines and
+labels as the portfolio's own X-ray):
 
-- **Numbered pins** on the game explain what each part does in Phoenix. Each pin shows the real code
-  behind it, which is extracted from the source files at compile time (`HangmanWeb.Xray.Source`),
-  so it can't drift from what's running.
+- **Inside**: ten numbered pins on the game explain what each part does in Phoenix. Each pin shows
+  the real code behind it, which is extracted from the source files at compile time
+  (`HangmanWeb.Xray.Source`), so it can't drift from what's running.
+- **Trace**: one key press followed end to end (keydown, event up, your process's mailbox,
+  `Game.guess/2`, HEEx re-render, diff down, DOM patch, animation) with live numbers: bytes each way,
+  round trip, and the server's own `handle_event` and render times. Those come from the `:telemetry`
+  events LiveView already emits (`HangmanWeb.Xray.Telemetry`), plus the raw JSON that crossed the wire.
+- **Why Phoenix**: what the BEAM and LiveView bring, each with proof from the page: your process's
+  memory and reductions, the **live supervision chain** above your game, a **"Crash my process"**
+  button (your process dies, the browser rejoins a fresh one and tells you how long it took), the
+  first-render vs per-guess diff sizes, the JavaScript actually downloaded, and a comparison with
+  the usual SPA + JSON API approach.
 - **Live process facts**: the Erlang PID serving *your* game, its memory, the number of processes on
   the node, and whether you're on a WebSocket or long-polling (through Vercel it's long-polling).
 - **Live wire**: every message between the browser and the server, with byte sizes and round-trip
   times. You can watch a key press go up as a tiny event and come back as a small diff.
-- **What I learned**: lessons from picking up Phoenix and Elixir for this project. Edit them in
+- **Lessons**: what I learned from picking up Phoenix and Elixir for this project. Edit them in
   `lib/hangman_web/xray.ex` (`@lessons`).
 
 ## How it's built
@@ -47,7 +62,7 @@ Press **X-ray** in the header and the page turns into a blueprint:
 | UI | `HangmanWeb.GameLive`: one LiveView that pushes `fx` events describing each move |
 | Mascots | `HangmanWeb.Mascots`: SVG sets drawn part by part by a GSAP hook |
 | Motion | `assets/js/hooks/*.js` (GSAP) and `assets/js/ember_field.js` (Three.js, lazy-loaded) |
-| X-ray | `HangmanWeb.Xray` (content, live BEAM stats) and `assets/js/wire.js` (socket traffic) |
+| X-ray | `HangmanWeb.Xray` (content, live BEAM stats, supervision chain), `HangmanWeb.Xray.Telemetry` (server timings) and `assets/js/wire.js` (socket traffic) |
 
 Everything is served under the `/hangman` path, so the app can sit behind the portfolio's domain.
 

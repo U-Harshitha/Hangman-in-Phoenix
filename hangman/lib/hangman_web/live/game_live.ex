@@ -14,9 +14,9 @@ defmodule HangmanWeb.GameLive do
 
   @keyboard ~w(qwertyuiop asdfghjkl zxcvbnm) |> Enum.map(&String.graphemes/1)
   @difficulties [
-    {:easy, "Easy", "Short answers · 2 hints"},
-    {:normal, "Normal", "Any length · 1 hint"},
-    {:hard, "Hard", "Long answers · no hints"}
+    {:easy, "Easy", "short · 2 hints"},
+    {:normal, "Normal", "any · 1 hint"},
+    {:hard, "Hard", "long · no hints"}
   ]
   @channels [:surf | Shows.ids()]
   @recent_limit 40
@@ -25,6 +25,9 @@ defmodule HangmanWeb.GameLive do
 
   @impl true
   def mount(_params, _session, socket) do
+    recovered = restore_crash(socket)
+    if recovered, do: send(self(), :xray_tick)
+
     {:ok,
      assign(socket,
        page_title: "Sitcom Hangman",
@@ -45,8 +48,9 @@ defmodule HangmanWeb.GameLive do
        total_words: Shows.total_words(),
        difficulties: @difficulties,
        keyboard: @keyboard,
-       xray: false,
-       xray_tab: "inside",
+       xray: recovered != nil,
+       xray_tab: if(recovered, do: "phoenix", else: "inside"),
+       recovered: recovered,
        xray_section: nil,
        runtime: nil,
        portfolio_url:
@@ -62,6 +66,18 @@ defmodule HangmanWeb.GameLive do
     end
   end
 
+  # After the X-ray "crash my process" demo, the browser reconnects and
+  # tells the new process which one died and when (see assets/js/app.js).
+  defp restore_crash(socket) do
+    with true <- connected?(socket),
+         %{"crash" => %{"pid" => "#PID<" <> _ = pid, "ms" => ms}} <- get_connect_params(socket),
+         true <- is_integer(ms) and ms in 0..120_000 and byte_size(pid) < 40 do
+      %{pid: pid, ms: ms}
+    else
+      _ -> nil
+    end
+  end
+
   # ── Menu ──────────────────────────────────────────────────────────────
 
   @impl true
@@ -71,6 +87,11 @@ defmodule HangmanWeb.GameLive do
       channel -> {:noreply, switch_channel(socket, channel)}
     end
   end
+
+  def handle_event("channel_step", %{"dir" => dir}, %{assigns: %{screen: :menu}} = socket),
+    do: {:noreply, step_channel(socket, if(dir == "-1", do: -1, else: 1))}
+
+  def handle_event("channel_step", _params, socket), do: {:noreply, socket}
 
   def handle_event("pick_difficulty", %{"difficulty" => value}, socket) do
     case Enum.find(@difficulties, fn {id, _, _} -> Atom.to_string(id) == value end) do
@@ -98,6 +119,7 @@ defmodule HangmanWeb.GameLive do
   def handle_event("guess", %{"letter" => letter}, socket), do: {:noreply, guess(socket, letter)}
   def handle_event("hint", _params, socket), do: {:noreply, hint(socket)}
 
+  # xray:keys
   # Physical keyboard: letters guess, Enter plays / continues, Escape backs
   # out, arrows flip channels on the menu, ? asks for a hint.
   def handle_event("key", %{"key" => key}, socket) do
@@ -119,6 +141,7 @@ defmodule HangmanWeb.GameLive do
   end
 
   def handle_event("key", _params, socket), do: {:noreply, socket}
+  # xray:end
 
   # ── X-ray ─────────────────────────────────────────────────────────────
 
@@ -130,8 +153,9 @@ defmodule HangmanWeb.GameLive do
     {:noreply, socket |> assign(xray: true) |> push_event("xray", %{on: true})}
   end
 
-  def handle_event("xray_tab", %{"tab" => tab}, socket) when tab in ~w(inside wire lessons),
-    do: {:noreply, assign(socket, xray_tab: tab)}
+  def handle_event("xray_tab", %{"tab" => tab}, socket)
+      when tab in ~w(inside trace phoenix wire lessons),
+      do: {:noreply, assign(socket, xray_tab: tab)}
 
   def handle_event("xray_focus", %{"section" => id}, socket) do
     section = if Xray.section(id), do: id
@@ -141,6 +165,12 @@ defmodule HangmanWeb.GameLive do
   def handle_event("xray_back", _params, socket),
     do: {:noreply, assign(socket, xray_section: nil)}
 
+  # "Let it crash", on purpose: this LiveView process dies, its supervisor
+  # shrugs, and the browser rejoins a brand-new process. Only you notice.
+  def handle_event("crash", _params, socket) do
+    raise "X-ray demo: #{inspect(self())} crashed on purpose (#{socket.assigns.screen} screen)"
+  end
+
   @impl true
   def handle_info(:xray_tick, %{assigns: %{xray: true}} = socket) do
     Process.send_after(self(), :xray_tick, @xray_tick_ms)
@@ -149,10 +179,20 @@ defmodule HangmanWeb.GameLive do
 
   def handle_info(:xray_tick, socket), do: {:noreply, socket}
 
+  # Timings from LiveView's own :telemetry events (HangmanWeb.Xray.Telemetry).
+  # Only a push_event, never an assign, so it can't trigger another render.
+  def handle_info({:xray_trace, trace}, socket),
+    do: {:noreply, push_event(socket, "xray_trace", trace)}
+
+  # xray:timers
+  # The title card hides itself 2.1 s after an episode starts. The timer
+  # message carries the round number, so a stale timer from an episode you
+  # skipped can never hide the next episode's card.
   def handle_info({:hide_titlecard, round}, %{assigns: %{round: round}} = socket),
     do: {:noreply, assign(socket, titlecard: nil)}
 
   def handle_info({:hide_titlecard, _}, socket), do: {:noreply, socket}
+  # xray:end
 
   # ── Moves ─────────────────────────────────────────────────────────────
 
@@ -298,6 +338,14 @@ defmodule HangmanWeb.GameLive do
 
   # ── Rendering ─────────────────────────────────────────────────────────
 
+  @slots %{
+    surf: "All night",
+    friends: "8:00",
+    big_bang: "8:30",
+    modern_family: "9:00",
+    brooklyn_99: "9:30"
+  }
+
   @impl true
   def render(assigns) do
     ~H"""
@@ -317,8 +365,8 @@ defmodule HangmanWeb.GameLive do
         >
         </div>
         <div class="app-body">
-          <.topbar stats={@stats} portfolio_url={@portfolio_url} screen={@screen} xray={@xray} />
-          <main class="mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 pb-8 sm:px-6">
+          <.topbar stats={@stats} portfolio_url={@portfolio_url} xray={@xray} />
+          <main class="main">
             <.menu
               :if={@screen == :menu}
               shows={@shows}
@@ -345,13 +393,13 @@ defmodule HangmanWeb.GameLive do
             />
           </main>
           <footer class="footer">
-            <span>Built with Elixir · Phoenix LiveView · GSAP · Three.js</span>
+            <span>Elixir · Phoenix LiveView · GSAP · Three.js</span>
             <span class="relative inline-flex items-center gap-2">
               <span id="transport-badge" phx-update="ignore" class="transport-badge">connecting…</span>
               <.pin :if={@xray} section="transport" n={8} />
             </span>
             <a href="https://github.com/U-Harshitha/Hangman-in-Phoenix" target="_blank" rel="noopener">
-              Source
+              Source on GitHub
             </a>
           </footer>
         </div>
@@ -360,6 +408,7 @@ defmodule HangmanWeb.GameLive do
           tab={@xray_tab}
           section={@xray_section && Xray.section(@xray_section)}
           runtime={@runtime}
+          recovered={@recovered}
         />
       </div>
     </Layouts.app>
@@ -368,72 +417,69 @@ defmodule HangmanWeb.GameLive do
 
   attr :stats, Stats, required: true
   attr :portfolio_url, :string, required: true
-  attr :screen, :atom, required: true
   attr :xray, :boolean, required: true
 
   defp topbar(assigns) do
     ~H"""
     <header class="topbar">
-      <a href={@portfolio_url} class="chip-link group" aria-label="Back to portfolio">
-        <svg
-          viewBox="0 0 20 20"
-          class="size-4 transition-transform group-hover:-translate-x-0.5"
-          aria-hidden="true"
-        >
-          <path
-            d="M12.5 4.5 7 10l5.5 5.5"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          />
-        </svg>
-        <span class="hidden sm:inline">Portfolio</span>
+      <a href={@portfolio_url} class="mark" aria-label="Back to the portfolio">
+        <span class="mark-glyph" aria-hidden="true">H.U.</span>
+        <span class="mark-sub">
+          <svg viewBox="0 0 20 20" class="size-3.5" aria-hidden="true">
+            <path
+              d="M12.5 4.5 7 10l5.5 5.5"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+          <span class="hidden sm:inline">portfolio</span>
+        </span>
       </a>
-      <button
-        type="button"
-        phx-click="menu"
-        class="brand"
-        aria-label="Sitcom Hangman, back to the TV guide"
-      >
-        <span class="brand-dot" aria-hidden="true"></span> Sitcom Hangman
-      </button>
-      <div class="flex items-center gap-3 sm:gap-5">
-        <dl class="stats" id="stats-bar">
-          <div>
-            <dt>Score</dt><dd data-stat="score">{@stats.score}</dd>
-          </div>
-          <div class="hidden sm:block">
-            <dt>Streak</dt><dd data-stat="streak">{@stats.streak}</dd>
-          </div>
+      <nav class="tools" aria-label="Game">
+        <button
+          type="button"
+          phx-click="menu"
+          class="tool tool-brand"
+          aria-label="Sitcom Hangman: back to the TV guide"
+        >
+          <span class="hidden sm:inline">Sitcom Hangman</span>
+          <span class="sm:hidden">Guide</span>
+        </button>
+        <span class="tool tool-stat" id="stats-bar">
+          score <b data-stat="score">{@stats.score}</b>
           <.pin :if={@xray} section="stats" n={6} />
-        </dl>
+        </span>
+        <span class="tool tool-stat hidden sm:inline-flex">
+          streak <b data-stat="streak">{@stats.streak}</b>
+        </span>
         <button
           type="button"
           id="xray-toggle"
           phx-click="xray"
-          class={["xray-toggle", @xray && "is-on"]}
+          class="tool"
           aria-pressed={to_string(@xray)}
           title="See how this page works under the hood"
         >
-          <svg viewBox="0 0 24 24" class="size-4" aria-hidden="true">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
             <path
-              d="M3 7V4h3M21 7V4h-3M3 17v3h3M21 17v3h-3M8 12h8M12 8v8"
+              d="M3 8V4h4M21 8V4h-4M3 16v4h4M21 16v4h-4M8 12h8M12 8v8"
               fill="none"
               stroke="currentColor"
-              stroke-width="2"
+              stroke-width="1.6"
               stroke-linecap="round"
             />
           </svg>
           X-ray
         </button>
-      </div>
+      </nav>
     </header>
     """
   end
 
-  # ── Menu: a TV guide ──────────────────────────────────────────────────
+  # ── Menu: the TV guide and the set ────────────────────────────────────
 
   attr :shows, :list, required: true
   attr :channel, :atom, required: true
@@ -444,81 +490,145 @@ defmodule HangmanWeb.GameLive do
   attr :xray, :boolean, required: true
 
   defp menu(assigns) do
-    assigns = assign(assigns, :current, Enum.find(assigns.shows, &(&1.id == assigns.channel)))
+    assigns =
+      assigns
+      |> assign(:current, Enum.find(assigns.shows, &(&1.id == assigns.channel)))
+      |> assign(:index, Enum.find_index(@channels, &(&1 == assigns.channel)))
+      |> assign(:slots, @slots)
 
     ~H"""
     <section id="menu" phx-hook="Intro" class="menu">
       <div class="menu-copy">
-        <p class="kicker" data-intro>Now airing · built in Elixir</p>
-        <h1 class="hero-title" aria-label="Sitcom Hangman">
-          <span class="hero-line">
-            <span :for={ch <- String.graphemes("Sitcom")} class="hero-letter" aria-hidden="true">{ch}</span>
+        <p class="eyebrow" data-intro>
+          <span class="tally" aria-hidden="true"></span> Tonight on Phoenix TV
+        </p>
+        <h1 class="title" aria-label="Hangman, the sitcom edition">
+          <span class="title-note" aria-hidden="true">the sitcom edition</span>
+          <svg class="title-arrow" viewBox="0 0 64 40" aria-hidden="true">
+            <path d="M60 3C42 5 22 12 9 31" />
+            <path d="M9 31l1.5-10.5M9 31l9.5-4.5" />
+          </svg>
+          <span class="title-word" aria-hidden="true">
+            <span :for={ch <- String.graphemes("Hangman")} class="title-letter">{ch}</span>
           </span>
-          <span class="hero-line hero-line--accent">
-            <span :for={ch <- String.graphemes("Hangman")} class="hero-letter" aria-hidden="true">{ch}</span>
-          </span>
+          <span class="title-mark" aria-hidden="true"></span>
         </h1>
         <p class="lede" data-intro>
-          Four channels, {@total_words} pieces of sitcom trivia. Guess the answer
-          one letter at a time before your six takes run out.
+          {@total_words} questions from four sitcoms. Guess the answer a letter at a
+          time before your six takes run out.
         </p>
 
-        <div class="guide" role="radiogroup" aria-label="Channel" data-intro>
-          <button
-            :for={{id, n} <- Enum.with_index([:surf | Enum.map(@shows, & &1.id)])}
-            type="button"
-            role="radio"
-            aria-checked={to_string(id == @channel)}
-            phx-click="pick_channel"
-            phx-value-channel={id}
-            class={["guide-row", id == @channel && "is-selected"]}
-            data-show={id}
-            data-card
-          >
-            <span class="guide-ch">CH {String.pad_leading(to_string(n), 2, "0")}</span>
-            <span class="guide-name">{if id == :surf, do: "Channel surf", else: show_name(@shows, id)}</span>
-            <span class="guide-meta">
-              {if id == :surf,
-                do: "All four shows, mixed",
-                else: "starring #{show_field(@shows, id, :mascot)}"}
-            </span>
-            <span :if={id == @channel} class="on-air">On air</span>
-          </button>
+        <div
+          id="guide"
+          class="guide"
+          role="radiogroup"
+          aria-label="Channel"
+          phx-hook="Guide"
+          data-x="phx-click → pick_channel"
+          data-intro
+        >
+          <.pin :if={@xray} section="channel" n={10} />
+          <div class="guide-head" aria-hidden="true">
+            <span>CH</span>
+            <span>Tonight</span>
+            <span class="text-right">Time</span>
+          </div>
+          <div class="guide-rows">
+            <span id="guide-cursor" class="guide-cursor" phx-update="ignore" aria-hidden="true"></span>
+            <button
+              :for={{id, n} <- Enum.with_index([:surf | Enum.map(@shows, & &1.id)])}
+              type="button"
+              role="radio"
+              aria-checked={to_string(id == @channel)}
+              phx-click="pick_channel"
+              phx-value-channel={id}
+              class={["guide-row", id == @channel && "is-selected"]}
+              data-show={id}
+              data-card
+            >
+              <span class="guide-ch">{String.pad_leading(to_string(n), 2, "0")}</span>
+              <span class="guide-main">
+                <span class="guide-name">
+                  <i class="guide-swatch" aria-hidden="true"></i>{if id == :surf,
+                    do: "Channel surf",
+                    else: show_name(@shows, id)}
+                </span>
+                <span class="guide-meta">
+                  {if id == :surf,
+                    do: "All four shows, shuffled",
+                    else:
+                      "starring #{show_field(@shows, id, :mascot)} · #{length(Shows.entries(id))} questions"}
+                </span>
+              </span>
+              <span class="guide-slot">
+                <span :if={id == @channel} class="on-air">On air</span>
+                <span :if={id != @channel}>{@slots[id]}</span>
+              </span>
+              <span :if={id == @channel} class="guide-progress" aria-hidden="true"><i></i></span>
+            </button>
+          </div>
         </div>
       </div>
 
-      <div class="tv-wrap" data-intro>
-        <div class="tv" id="tv" phx-hook="Tv" data-channel={@channel}>
+      <div class="stage" data-intro>
+        <div
+          class="tv"
+          id="tv"
+          phx-hook="Tv"
+          data-channel={@channel}
+          style={"--dial: #{@index * 64 - 128}deg"}
+          data-x="Tv hook · canvas static"
+        >
           <.pin :if={@xray} section="process" n={7} />
-          <div class="tv-screen">
-            <div :if={@channel != :surf} class="tv-picture">
-              <Mascots.set show={@channel} preview />
+          <div class="tv-antenna" aria-hidden="true"><i></i><i></i><b></b></div>
+          <div class="tv-body">
+            <div class="tv-screen">
+              <div :if={@channel != :surf} class="tv-picture">
+                <Mascots.set show={@channel} preview />
+              </div>
+              <div :if={@channel == :surf} class="tv-picture tv-surf">
+                <span>CHANNEL SURFING</span>
+              </div>
+              <canvas class="tv-static" aria-hidden="true"></canvas>
+              <span class="tv-osd" aria-hidden="true">
+                CH {String.pad_leading(to_string(@index), 2, "0")}
+              </span>
+              <div class="tv-lower-third">
+                <strong>{if @current, do: @current.name, else: "Channel surf"}</strong>
+                <span>{if @current, do: @current.tagline, else: "A different show every episode."}</span>
+              </div>
             </div>
-            <div :if={@channel == :surf} class="tv-picture tv-surf">
-              <span>CHANNEL SURFING</span>
-            </div>
-            <canvas class="tv-static" aria-hidden="true"></canvas>
-            <span class="tv-osd" aria-hidden="true">
-              CH {String.pad_leading(
-                to_string(Enum.find_index([:surf | Shows.ids()], &(&1 == @channel))),
-                2,
-                "0"
-              )}
-            </span>
-            <div class="tv-lower-third">
-              <strong>{if @current, do: @current.name, else: "Channel surf"}</strong>
-              <span>{if @current, do: @current.tagline, else: "A different show every episode."}</span>
+            <div class="tv-panel">
+              <span class="tv-grille" aria-hidden="true"></span>
+              <button
+                type="button"
+                class="tv-dial"
+                phx-click="channel_step"
+                phx-value-dir="1"
+                aria-label="Next channel"
+                title="Next channel"
+              >
+                <i aria-hidden="true"></i>
+              </button>
+              <span class="tv-dial-label" aria-hidden="true">channel</span>
+              <button
+                type="button"
+                class="tv-dial tv-dial--small"
+                phx-click="channel_step"
+                phx-value-dir="-1"
+                aria-label="Previous channel"
+                title="Previous channel"
+              >
+                <i aria-hidden="true"></i>
+              </button>
+              <span class="tv-led" aria-hidden="true"></span>
             </div>
           </div>
-          <div class="tv-base" aria-hidden="true">
-            <span class="tv-brand">PHOENIX</span>
-            <span class="tv-knob"></span>
-            <span class="tv-knob"></span>
-          </div>
+          <div class="tv-feet" aria-hidden="true"><i></i><i></i></div>
         </div>
-        <div class="remote" data-intro>
-          <p class="panel-label">Difficulty</p>
-          <div class="segmented mt-2" role="radiogroup" aria-label="Difficulty">
+
+        <div class="controls" data-intro>
+          <div class="segmented" role="radiogroup" aria-label="Difficulty">
             <button
               :for={{id, label, blurb} <- @difficulties}
               type="button"
@@ -528,34 +638,30 @@ defmodule HangmanWeb.GameLive do
               phx-value-difficulty={id}
               class={[id == @difficulty && "is-selected"]}
             >
-              <span class="font-semibold">{label}</span>
-              <span class="text-xs opacity-70">{blurb}</span>
+              <span class="seg-label">{label}</span>
+              <span class="seg-blurb">{blurb}</span>
             </button>
           </div>
+          <div class="play-row">
+            <button type="button" phx-click="start" class="btn btn-primary" id="play">
+              Roll the episode
+            </button>
+            <span class="hint-text hidden sm:inline">
+              <kbd>Enter</kbd> to play · <kbd>←</kbd><kbd>→</kbd> channels
+            </span>
+          </div>
+          <dl :if={@stats.played > 0} class="menu-stats">
+            <div>
+              <dt>Episodes</dt><dd>{@stats.played}</dd>
+            </div>
+            <div>
+              <dt>Win rate</dt><dd>{Stats.win_rate(@stats)}%</dd>
+            </div>
+            <div>
+              <dt>Best streak</dt><dd>{@stats.best_streak}</dd>
+            </div>
+          </dl>
         </div>
-
-        <div class="remote-play" data-intro>
-          <button type="button" phx-click="start" class="btn-primary" id="play">
-            Roll the episode
-            <svg viewBox="0 0 20 20" class="size-4" aria-hidden="true">
-              <path d="M6 4.5v11l9-5.5-9-5.5Z" fill="currentColor" />
-            </svg>
-          </button>
-          <span class="hint-text hidden sm:inline"><kbd>Enter</kbd>
-          to play · <kbd>←</kbd> <kbd>→</kbd>
-          change channel</span>
-        </div>
-        <dl :if={@stats.played > 0} class="menu-stats">
-          <div>
-            <dt>Episodes</dt><dd>{@stats.played}</dd>
-          </div>
-          <div>
-            <dt>Win rate</dt><dd>{Stats.win_rate(@stats)}%</dd>
-          </div>
-          <div>
-            <dt>Best streak</dt><dd>{@stats.best_streak}</dd>
-          </div>
-        </dl>
       </div>
     </section>
     """
@@ -584,39 +690,34 @@ defmodule HangmanWeb.GameLive do
       <div class="episode-bar">
         <span class="ep-channel">CH {String.pad_leading(to_string(@show.channel), 2, "0")}</span>
         <span class="ep-show">{@show.short}</span>
-        <span class="ep-title">
-          <span class="ep-number">S{season(@game.difficulty)} · E{@round}</span>
-          {Shows.episode_title(@show.id, @round)}
-        </span>
-        <.pin :if={@xray} section="process" n={7} />
+        <span class="ep-number">S{season(@game.difficulty)} · E{@round}</span>
+        <span class="ep-title">{Shows.episode_title(@show.id, @round)}</span>
+        <.pin :if={@xray} section="timers" n={9} />
       </div>
 
       <div class="board-grid">
-        <div class="set-panel">
+        <div class="set-tv" data-x="Mascot hook · phx-update=ignore">
           <.pin :if={@xray} section="mascot" n={4} />
-          <div
-            id="mascot"
-            phx-hook="Mascot"
-            data-show={@show.id}
-            data-mistakes={Game.mistakes(@game)}
-            data-status={@game.status}
-            data-round={@round}
-            class="mascot"
-          >
-            <div id={"mascot-svg-#{@show.id}"} phx-update="ignore" class="mascot-frame">
-              <Mascots.set show={@show.id} />
+          <div class="set-screen">
+            <div
+              id="mascot"
+              phx-hook="Mascot"
+              data-show={@show.id}
+              data-mistakes={Game.mistakes(@game)}
+              data-status={@game.status}
+              data-round={@round}
+              class="mascot"
+            >
+              <div id={"mascot-svg-#{@show.id}"} phx-update="ignore" class="mascot-frame">
+                <Mascots.set show={@show.id} />
+              </div>
+            </div>
+            <div :if={@caption} id={"cc-#{@caption_n}"} class="caption" aria-hidden="true">
+              {@caption}
             </div>
           </div>
-          <div
-            :if={@caption}
-            id={"cc-#{@caption_n}"}
-            class="caption"
-            aria-hidden="true"
-          >
-            {@caption}
-          </div>
           <div class="takes" id="takes">
-            <span class="takes-label">Takes left</span>
+            <span class="takes-label">takes</span>
             <span
               class="takes-lamps"
               aria-label={"#{Game.lives(@game)} of #{Game.max_lives()} takes left"}
@@ -629,6 +730,7 @@ defmodule HangmanWeb.GameLive do
               ></span>
             </span>
             <.pin :if={@xray} section="scene" n={5} />
+            <.pin :if={@xray} section="process" n={7} />
           </div>
         </div>
 
@@ -638,29 +740,28 @@ defmodule HangmanWeb.GameLive do
             <p class="clue-text">{@game.clue}</p>
           </div>
 
-          <div class="word-card">
+          <div class="word-card" data-x="server-rendered · HEEx diff">
             <.pin :if={@xray} section="word" n={1} />
             <div
               id="word"
-              class={["word", length(Game.tiles(@game)) > 11 && "word--long"]}
+              class={["word", word_size(@game)]}
               role="img"
               aria-label={"Answer: " <> Game.masked(@game)}
             >
-              <span
-                :for={{tile, i} <- Enum.with_index(Game.tiles(@game))}
-                class={[
-                  "tile",
-                  tile.char == " " && "tile--gap",
-                  !tile.letter? && tile.char != " " && "tile--punct",
-                  tile.revealed && "is-revealed",
-                  tile.missed && "is-missed"
-                ]}
-                data-index={i}
-                data-revealed={to_string(tile.revealed)}
-              >
-                <span :if={tile.revealed or !tile.letter?}>{if tile.char == " ",
-                  do: "",
-                  else: tile.char}</span>
+              <span :for={group <- word_groups(@game)} class="word-group">
+                <span
+                  :for={{tile, i} <- group}
+                  class={[
+                    "tile",
+                    !tile.letter? && "tile--punct",
+                    tile.revealed && "is-revealed",
+                    tile.missed && "is-missed"
+                  ]}
+                  data-index={i}
+                  data-revealed={to_string(tile.revealed)}
+                >
+                  <b :if={tile.revealed or !tile.letter?}>{tile.char}</b>
+                </span>
               </span>
             </div>
             <div class="word-foot">
@@ -672,16 +773,21 @@ defmodule HangmanWeb.GameLive do
                 :if={@game.hints_left > 0 and @game.status == :playing}
                 type="button"
                 phx-click="hint"
-                class="btn-ghost"
+                class="btn btn-small"
                 id="hint"
                 disabled={Game.lives(@game) <= 1}
               >
-                Hint ({@game.hints_left})
+                Hint · {@game.hints_left}
               </button>
             </div>
           </div>
 
-          <div id="keyboard" class="keyboard" aria-label="Letters">
+          <div
+            id="keyboard"
+            class="keyboard"
+            aria-label="Letters"
+            data-x="phx-click → handle_event"
+          >
             <.pin :if={@xray} section="keyboard" n={2} />
             <div :for={row <- @keyboard} class="keyboard-row">
               <button
@@ -697,10 +803,10 @@ defmodule HangmanWeb.GameLive do
                 {letter}
               </button>
             </div>
-            <p class="hint-text mt-3 hidden text-center sm:block">
-              Type to guess · <kbd>?</kbd> hint · <kbd>Esc</kbd> TV guide
-            </p>
           </div>
+          <p class="hint-text hidden text-center sm:block">
+            Type to guess · <kbd>?</kbd> hint · <kbd>Esc</kbd> TV guide
+          </p>
         </div>
       </div>
 
@@ -724,6 +830,26 @@ defmodule HangmanWeb.GameLive do
       <.result :if={Game.over?(@game)} game={@game} show={@show} stats={@stats} points={@last_points} />
     </section>
     """
+  end
+
+  # Tiles grouped per word (spaces dropped), so answers wrap between
+  # words rather than in the middle of one.
+  defp word_groups(game) do
+    game
+    |> Game.tiles()
+    |> Enum.with_index()
+    |> Enum.chunk_by(fn {tile, _} -> tile.char == " " end)
+    |> Enum.reject(fn [{tile, _} | _] -> tile.char == " " end)
+  end
+
+  defp word_size(game) do
+    longest = game |> word_groups() |> Enum.map(&length/1) |> Enum.max(fn -> 0 end)
+
+    cond do
+      longest > 9 or length(Game.tiles(game)) > 14 -> "word--long"
+      longest > 7 -> "word--mid"
+      true -> nil
+    end
   end
 
   defp season(:easy), do: 1
@@ -753,7 +879,14 @@ defmodule HangmanWeb.GameLive do
         </h2>
         <p :if={Game.lost?(@game)} class="result-line">{@show.lose_line}</p>
         <p class="result-label">The answer was</p>
-        <p class="result-word">{@game.word}</p>
+        <p class="result-word">
+          <span
+            :for={ch <- String.graphemes(@game.word)}
+            class={["rw-cap", ch == " " && "rw-gap"]}
+          >
+            {ch}
+          </span>
+        </p>
         <p class="result-fact"><span>Trivia</span> {@game.clue}</p>
         <dl class="result-stats">
           <div class="result-stat">
@@ -767,10 +900,10 @@ defmodule HangmanWeb.GameLive do
           </div>
         </dl>
         <div class="result-actions">
-          <button type="button" phx-click="next" class="btn-primary flex-1 justify-center" id="next">
-            Next episode <kbd class="kbd-dark">Enter</kbd>
+          <button type="button" phx-click="next" class="btn btn-primary flex-1" id="next">
+            Next episode
           </button>
-          <button type="button" phx-click="menu" class="btn-ghost flex-1 justify-center">
+          <button type="button" phx-click="menu" class="btn flex-1">
             Change channel
           </button>
         </div>
@@ -798,11 +931,22 @@ defmodule HangmanWeb.GameLive do
     """
   end
 
+  @tabs [
+    {"inside", "Inside"},
+    {"trace", "Trace"},
+    {"phoenix", "Why Phoenix"},
+    {"wire", "Wire"},
+    {"lessons", "Lessons"}
+  ]
+
   attr :tab, :string, required: true
   attr :section, :map, default: nil
   attr :runtime, :map, default: nil
+  attr :recovered, :map, default: nil
 
   defp xray_panel(assigns) do
+    assigns = assign(assigns, :tabs, @tabs)
+
     ~H"""
     <aside id="xray-panel" class="xray-panel" aria-label="X-ray: how this page works">
       <div class="xp-head">
@@ -810,7 +954,16 @@ defmodule HangmanWeb.GameLive do
           <p class="xp-kicker">X-ray mode</p>
           <h2 class="xp-title">How this page works</h2>
         </div>
-        <button type="button" phx-click="xray" class="xp-close" aria-label="Close X-ray">✕</button>
+        <button type="button" phx-click="xray" class="xp-close" aria-label="Close X-ray">
+          <svg viewBox="0 0 20 20" class="size-4" aria-hidden="true">
+            <path
+              d="M5 5l10 10M15 5 5 15"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+            />
+          </svg>
+        </button>
       </div>
 
       <div class="xp-runtime">
@@ -826,29 +979,17 @@ defmodule HangmanWeb.GameLive do
             <dt>Processes on node</dt><dd>{@runtime.processes}</dd>
           </div>
           <div>
-            <dt>Schedulers</dt><dd>{@runtime.schedulers}</dd>
-          </div>
-          <div>
-            <dt>Server uptime</dt><dd>{@runtime.uptime}</dd>
-          </div>
-          <div>
             <dt>Transport</dt><dd id="xp-transport" phx-hook="Transport" phx-update="ignore">…</dd>
           </div>
           <div>
-            <dt>Runtime</dt><dd>{@runtime.versions}</dd>
+            <dt>Server uptime</dt><dd>{@runtime.uptime}</dd>
           </div>
         </dl>
       </div>
 
       <nav class="xp-tabs" role="tablist">
         <button
-          :for={
-            {id, label} <- [
-              {"inside", "Inside"},
-              {"wire", "Live wire"},
-              {"lessons", "What I learned"}
-            ]
-          }
+          :for={{id, label} <- @tabs}
           type="button"
           role="tab"
           aria-selected={to_string(@tab == id)}
@@ -887,6 +1028,9 @@ defmodule HangmanWeb.GameLive do
           <pre class="xp-code"><code>{Phoenix.HTML.raw(@section.html)}</code></pre>
         </div>
 
+        <.xray_trace :if={@tab == "trace"} />
+        <.xray_phoenix :if={@tab == "phoenix"} runtime={@runtime} recovered={@recovered} />
+
         <div :if={@tab == "wire"} class="xp-wire">
           <p class="xp-p">
             Every message between your browser and the server, live. Press a letter and
@@ -913,6 +1057,193 @@ defmodule HangmanWeb.GameLive do
     </aside>
     """
   end
+
+  # One key press, followed end to end. The numbers are filled in by the
+  # Trace hook from real traffic and LiveView's own telemetry.
+  defp xray_trace(assigns) do
+    assigns = assign(assigns, :steps, Xray.trace_steps())
+
+    ~H"""
+    <div class="xp-trace">
+      <p class="xp-p">
+        Follow one key press all the way to the server and back. Start an episode and
+        press a letter: every number below is measured from that press.
+      </p>
+      <ol id="trace" class="trace" phx-hook="Trace" phx-update="ignore">
+        <li :for={{step, i} <- Enum.with_index(@steps, 1)} class="trace-step" data-where={step.where}>
+          <span class="trace-dot" aria-hidden="true">{i}</span>
+          <div class="trace-body">
+            <p class="trace-where">{step.label}</p>
+            <h4>{step.title}</h4>
+            <p class="trace-text">{Xray.format(step.body)}</p>
+            <p :if={step[:slot]} class="trace-value">
+              <span data-slot={step.slot}>—</span>
+            </p>
+          </div>
+        </li>
+      </ol>
+      <div id="trace-raw" class="trace-raw" phx-update="ignore">
+        <p class="xp-file">What actually crossed the wire</p>
+        <pre class="xp-code"><code data-raw="up">Press a letter…</code></pre>
+        <pre class="xp-code"><code data-raw="down"></code></pre>
+      </div>
+    </div>
+    """
+  end
+
+  attr :runtime, :map, default: nil
+  attr :recovered, :map, default: nil
+
+  defp xray_phoenix(assigns) do
+    assigns = assign(assigns, specialities: Xray.specialities(), loc: Xray.loc())
+
+    ~H"""
+    <div class="xp-phoenix">
+      <div :if={@recovered} class="recovered" id="recovered">
+        <p class="recovered-k">You just crashed a process</p>
+        <p>
+          <code>{@recovered.pid}</code>
+          died. Its supervisor didn't care: your browser rejoined and got
+          <code>{@runtime && @runtime.pid}</code>
+          in <strong>{@recovered.ms} ms</strong>. Your score survived (it lives in your
+          browser); the episode you were in did not. Nobody else playing noticed a thing.
+        </p>
+      </div>
+
+      <p class="xp-p">
+        Phoenix is a web framework for Elixir, which runs on the BEAM, the virtual machine
+        Ericsson built for telephone switches that weren't allowed to go down. Here's
+        what that buys a small game, with proof from this page.
+      </p>
+
+      <article :for={{sp, i} <- Enum.with_index(@specialities, 1)} class="spec" id={"spec-#{sp.id}"}>
+        <span class="spec-n">{String.pad_leading(to_string(i), 2, "0")}</span>
+        <div class="spec-body">
+          <h3>{sp.title}</h3>
+          <p>{Xray.format(sp.body)}</p>
+          <.proof id={sp.id} runtime={@runtime} loc={@loc} />
+        </div>
+      </article>
+
+      <h3 class="xp-sub">The same game, the usual way</h3>
+      <table class="compare">
+        <thead>
+          <tr>
+            <th></th>
+            <th>SPA + JSON API</th>
+            <th>This LiveView</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr :for={{row, spa, lv} <- Xray.comparison()}>
+            <th>{row}</th>
+            <td>{spa}</td>
+            <td>{lv}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    """
+  end
+
+  attr :id, :atom, required: true
+  attr :runtime, :map, default: nil
+  attr :loc, :map, required: true
+
+  defp proof(%{id: :process} = assigns) do
+    ~H"""
+    <dl :if={@runtime} class="proof proof-grid">
+      <div>
+        <dt>you</dt><dd>{@runtime.pid}</dd>
+      </div>
+      <div>
+        <dt>your memory</dt><dd>{@runtime.memory_kb} KB</dd>
+      </div>
+      <div>
+        <dt>work done</dt><dd>{@runtime.reductions} reductions</dd>
+      </div>
+      <div>
+        <dt>schedulers</dt><dd>{@runtime.schedulers} (one per core)</dd>
+      </div>
+    </dl>
+    """
+  end
+
+  defp proof(%{id: :supervision} = assigns) do
+    ~H"""
+    <div class="proof">
+      <ol :if={@runtime} class="tree" aria-label="Your process's supervision chain">
+        <li :for={{node, depth} <- Enum.with_index(@runtime.chain)} style={"--d: #{depth}"}>
+          <span class="tree-name">{node.name}</span>
+          <span class="tree-kind">{node.kind}</span>
+        </li>
+      </ol>
+      <button
+        type="button"
+        id="crash"
+        class="btn btn-small btn-danger"
+        phx-hook="Crash"
+        data-pid={@runtime && @runtime.pid}
+      >
+        Crash my process
+      </button>
+    </div>
+    """
+  end
+
+  defp proof(%{id: :diffs} = assigns) do
+    ~H"""
+    <dl id="proof-diffs" class="proof proof-grid" phx-hook="DiffStats" phx-update="ignore">
+      <div>
+        <dt>first render</dt><dd data-slot="first">—</dd>
+      </div>
+      <div>
+        <dt>static HTML in it</dt><dd data-slot="statics">—</dd>
+      </div>
+      <div>
+        <dt>avg diff per guess</dt><dd data-slot="avg">press a letter</dd>
+      </div>
+      <div>
+        <dt>messages so far</dt><dd data-slot="count">—</dd>
+      </div>
+    </dl>
+    """
+  end
+
+  defp proof(%{id: :js} = assigns) do
+    ~H"""
+    <dl id="proof-js" class="proof proof-grid" phx-hook="JsStats" phx-update="ignore">
+      <div>
+        <dt>JS to play</dt><dd data-slot="main">—</dd>
+      </div>
+      <div>
+        <dt>Three.js, later</dt><dd data-slot="lazy">—</dd>
+      </div>
+      <div>
+        <dt>Elixir (rules + UI)</dt><dd>{@loc.elixir} lines</dd>
+      </div>
+      <div>
+        <dt>JS (motion + X-ray)</dt><dd>{@loc.js} lines</dd>
+      </div>
+    </dl>
+    """
+  end
+
+  defp proof(%{id: :transport} = assigns) do
+    ~H"""
+    <p class="proof proof-line">
+      Right now: <b id="proof-transport" phx-hook="Transport" phx-update="ignore">…</b>
+    </p>
+    """
+  end
+
+  defp proof(%{id: :telemetry} = assigns) do
+    ~H"""
+    <pre class="xp-code proof"><code>{Phoenix.HTML.raw(Xray.telemetry_html())}</code></pre>
+    """
+  end
+
+  defp proof(assigns), do: ~H""
 
   defp message_text(nil), do: ""
   defp message_text({_kind, text}), do: text
