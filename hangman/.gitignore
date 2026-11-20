@@ -26,7 +26,7 @@ erl_crash.dump
 hangman-*.tar
 
 # Ignore assets that are produced by build tools.
-/priv/static/assets/
+/priv/static/hangman/assets/
 
 # Ignore digested assets cache.
 /priv/static/cache_manifest.json
@@ -35,3 +35,7 @@ hangman-*.tar
 npm-debug.log
 /assets/node_modules/
 
+
+# Playwright smoke test output
+/e2e/node_modules/
+/e2e/screenshots/

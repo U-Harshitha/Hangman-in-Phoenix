@@ -1,0 +1,112 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: hangman
+
+jobs:
+  test:
+    name: Build & test
+    runs-on: ubuntu-latest
+    env:
+      MIX_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: "27.3"
+          elixir-version: "1.18.4"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            hangman/deps
+            hangman/_build
+          key: mix-${{ runner.os }}-${{ hashFiles('hangman/mix.exs', 'hangman/mix.lock') }}
+          restore-keys: mix-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      - name: Show resolved lockfile
+        # Printed so the lockfile can be checked/committed from CI logs.
+        run: cat mix.lock
+
+      - name: Check formatting
+        run: mix format --check-formatted
+
+      - name: Compile (warnings as errors)
+        run: mix compile --warnings-as-errors
+
+      - name: Run tests
+        run: mix test
+
+      - name: Build production assets
+        env:
+          MIX_ENV: prod
+        run: |
+          npm ci --prefix assets --no-audit --no-fund
+          mix deps.get --only prod
+          mix compile
+          mix assets.deploy
+
+  e2e:
+    name: Browser test (Playwright)
+    runs-on: ubuntu-latest
+    needs: test
+    env:
+      MIX_ENV: prod
+      PHX_SERVER: "true"
+      SECRET_KEY_BASE: ci-only-secret-not-used-anywhere-else
+      PORT: "4000"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: "27.3"
+          elixir-version: "1.18.4"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build release
+        run: |
+          mix deps.get --only prod
+          npm ci --prefix assets --no-audit --no-fund
+          mix compile
+          mix assets.deploy
+          mix release
+      - name: Start server
+        run: |
+          _build/prod/rel/hangman/bin/hangman daemon
+          for i in $(seq 1 30); do curl -fs localhost:4000/hangman/health && break; sleep 1; done
+      - name: Run Playwright smoke test
+        run: |
+          npm install --no-save --prefix e2e playwright@1.63.0
+          npx --prefix e2e playwright install --with-deps chromium
+          node e2e/smoke.js
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshots
+          path: hangman/e2e/screenshots/
+
+  docker:
+    name: Docker image builds
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/build-push-action@v6
+        with:
+          context: hangman
+          push: false
