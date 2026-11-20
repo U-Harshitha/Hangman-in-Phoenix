@@ -9,9 +9,9 @@ import {Socket} from "phoenix"
 import {LiveSocket} from "phoenix_live_view"
 
 import {Scene} from "./hooks/scene"
-import {Intro, Board, Mascot, Result} from "./hooks/board"
+import {Intro, Guide, Board, Mascot, Result} from "./hooks/board"
 import {Tv, TitleCard} from "./hooks/tv"
-import {XrayScan, Wire, Transport, showTransport} from "./hooks/xray"
+import {XrayScan, Wire, Transport, Trace, DiffStats, JsStats, Crash, showTransport, takeCrash} from "./hooks/xray"
 import {wire} from "./wire"
 import {loadStats, saveStats} from "./stats"
 
@@ -21,13 +21,15 @@ const liveSocket = new LiveSocket("/hangman/live", Socket, {
   // Vercel rewrites can't proxy WebSockets, so through the portfolio
   // domain the socket falls back to HTTP long-polling after this delay.
   longPollFallbackMs: 1500,
-  params: () => ({_csrf_token: csrfToken, stats: loadStats()}),
-  hooks: {Scene, Intro, Board, Mascot, Result, Tv, TitleCard, XrayScan, Wire, Transport},
+  // Called on every join, including the rejoin after the X-ray crash demo.
+  params: () => ({_csrf_token: csrfToken, stats: loadStats(), crash: takeCrash()}),
+  hooks: {Scene, Intro, Guide, Board, Mascot, Result, Tv, TitleCard, XrayScan, Wire, Transport, Trace, DiffStats, JsStats, Crash},
 })
 
 wire.attach(liveSocket)
 liveSocket.socket.onOpen(() => setTimeout(showTransport, 50))
 window.addEventListener("phx:stats", (e) => saveStats(e.detail))
+window.addEventListener("phx:xray_trace", (e) => wire.serverTiming(e.detail))
 
 liveSocket.connect()
 window.liveSocket = liveSocket

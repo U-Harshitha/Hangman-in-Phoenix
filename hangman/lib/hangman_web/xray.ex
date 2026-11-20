@@ -16,9 +16,29 @@ defmodule HangmanWeb.Xray do
     lib/hangman/application.ex
     lib/hangman_web/endpoint.ex
     lib/hangman_web/live/game_live.ex
+    lib/hangman_web/xray/telemetry.ex
     assets/js/hooks/board.js
   )
   for file <- @files, do: @external_resource(Source.path(file))
+
+  # Line counts for the "Why Phoenix" tab, taken at compile time.
+  @elixir_files ~w(
+    lib/hangman/game.ex lib/hangman/shows.ex lib/hangman/stats.ex
+    lib/hangman_web/live/game_live.ex lib/hangman_web/components/mascots.ex
+  )
+  @js_files Path.wildcard(Source.path("assets/js/**/*.js"))
+  for file <- @js_files, do: @external_resource(file)
+
+  count_lines = fn files ->
+    files
+    |> Enum.flat_map(&(&1 |> File.read!() |> String.split("\n")))
+    |> Enum.count(&(String.trim(&1) != ""))
+  end
+
+  @loc %{
+    elixir: count_lines.(Enum.map(@elixir_files, &Source.path/1)),
+    js: count_lines.(@js_files)
+  }
 
   @sections [
     %{
@@ -122,7 +142,180 @@ defmodule HangmanWeb.Xray do
       """,
       file: "lib/hangman_web/endpoint.ex",
       code: Source.marked("lib/hangman_web/endpoint.ex", "socket")
+    },
+    %{
+      id: "timers",
+      n: 9,
+      title: "Timers are just messages",
+      body: """
+      The episode title card hides itself without any JavaScript timer. When
+      a round starts, the process sends itself a message for 2.1 s later with
+      `Process.send_after/3`. It arrives in the mailbox like any click would,
+      and pattern matching on the round number ignores stale ones.
+      """,
+      file: "lib/hangman_web/live/game_live.ex",
+      code: Source.marked("lib/hangman_web/live/game_live.ex", "timers")
+    },
+    %{
+      id: "channel",
+      n: 10,
+      title: "Clicks and keys, one code path",
+      body: """
+      Clicking a row sends `pick_channel`; arrow keys arrive as `key` events
+      from `phx-window-keydown`. Both end up in the same `step_channel`, and a
+      single `cond` maps every key in the game to what it should do.
+      """,
+      file: "lib/hangman_web/live/game_live.ex",
+      code: Source.marked("lib/hangman_web/live/game_live.ex", "keys")
     }
+  ]
+
+  # One key press, end to end (the Trace tab). `slot` names the live number
+  # the Trace hook fills in from real traffic and telemetry.
+  @trace_steps [
+    %{
+      where: "browser",
+      label: "Browser",
+      title: "You press a key",
+      body: """
+      `phx-window-keydown` on the page catches it. The keycap goes down right
+      away; that bit is plain CSS, so it never waits for the server.
+      """,
+      slot: "key"
+    },
+    %{
+      where: "wire",
+      label: "Network, going up",
+      title: "A tiny event goes up",
+      body: """
+      LiveView's client sends the event name and the key over the socket
+      that's already open. No HTTP request, no API route you had to design.
+      """,
+      slot: "up"
+    },
+    %{
+      where: "server",
+      label: "Server, your process",
+      title: "It lands in your process's mailbox",
+      body: """
+      Only the process holding *your* game receives it, and
+      `handle_event("key", …)` pattern-matches what to do. `Game.guess/2`
+      returns `{:hit, game}` or `{:miss, game}`, a brand-new struct.
+      """,
+      slot: "event_us"
+    },
+    %{
+      where: "server",
+      label: "Server, HEEx",
+      title: "Only what changed is re-rendered",
+      body: """
+      HEEx worked out at compile time which parts of the template depend on
+      which assigns. LiveView re-renders just those and diffs them against
+      what your browser already has.
+      """,
+      slot: "render_us"
+    },
+    %{
+      where: "wire",
+      label: "Network, coming down",
+      title: "A small diff comes back",
+      body: """
+      The changed tiles, the key's new class and the message, plus a
+      `push_event` telling the animations what happened. Never the answer.
+      """,
+      slot: "down"
+    },
+    %{
+      where: "browser",
+      label: "Browser",
+      title: "Patched in place, then animated",
+      body: """
+      LiveView patches the DOM without re-rendering the page, so focus and
+      scroll stay put. Then the `Board` and `Mascot` hooks hear the event and
+      animate with GSAP.
+      """,
+      slot: "rtt"
+    }
+  ]
+
+  @specialities [
+    %{
+      id: :process,
+      title: "One process per player",
+      body: """
+      Every visitor gets their own lightweight BEAM process that holds their
+      game in memory. Each costs a few kilobytes, so one small server can hold
+      hundreds of thousands. They share no memory: no locks, and no player can
+      touch another's state. The scheduler is preemptive, so one busy player
+      can't stall the rest.
+      """
+    },
+    %{
+      id: :supervision,
+      title: "Let it crash, on purpose",
+      body: """
+      Processes live in supervision trees. If one fails, it fails alone, its
+      supervisor carries on, and the LiveView client rejoins a fresh process by
+      itself. This is the real chain above your game, read live from the BEAM.
+      Go on, crash it.
+      """
+    },
+    %{
+      id: :diffs,
+      title: "HTML diffs instead of a JSON API",
+      body: """
+      The first render sends the page's static HTML once. After that, updates
+      carry only the dynamic values that changed, worked out on the server.
+      Measured from this tab's own traffic:
+      """
+    },
+    %{
+      id: :transport,
+      title: "Same code, any transport",
+      body: """
+      LiveView speaks WebSocket and falls back to HTTP long-polling with
+      identical server code. That's what keeps this game alive behind the
+      portfolio's Vercel rewrite, which can't proxy WebSockets.
+      """
+    },
+    %{
+      id: :telemetry,
+      title: "Instrumented out of the box",
+      body: """
+      LiveView emits `:telemetry` events for every mount, event and render. The
+      Trace tab's server timings come from one small handler attached to them
+      (`HangmanWeb.Xray.Telemetry`), not from timing code spread through the
+      game.
+      """
+    },
+    %{
+      id: :js,
+      title: "JavaScript where it earns its place",
+      body: """
+      All state and rules are Elixir. JavaScript only animates, through hooks
+      the server cues with `push_event`. The answer never exists in
+      JavaScript, and Three.js loads only after the game is playable.
+      """
+    },
+    %{
+      id: :compile,
+      title: "The compiler does the boring work",
+      body: """
+      The word banks are compiled into the release, `~p` routes are checked at
+      compile time, and the code in this panel was cut out of the real source
+      files during compilation, so it can't go stale.
+      """
+    }
+  ]
+
+  @comparison [
+    {"Where the answer lives", "In the browser, or behind extra API checks",
+     "Only in your server process"},
+    {"Endpoints to write", "New game, guess, hint, stats", "None: events hit handle_event/3"},
+    {"Client state", "A store kept in sync with the server", "None: the server renders"},
+    {"Live updates", "Add a socket library", "Built in"},
+    {"Wire format", "JSON you design and version", "HTML diffs LiveView computes"},
+    {"A server bug crashes", "A 500; the client must recover", "One process; it's restarted"}
   ]
 
   # Written in the first person: edit these to say it in your own words.
@@ -190,6 +383,15 @@ defmodule HangmanWeb.Xray do
 
   def sections, do: @sections
   def lessons, do: @lessons
+  def trace_steps, do: @trace_steps
+  def specialities, do: @specialities
+  def comparison, do: @comparison
+  def loc, do: @loc
+
+  @telemetry_html Source.highlight(
+                    Source.marked("lib/hangman_web/xray/telemetry.ex", "telemetry")
+                  )
+  def telemetry_html, do: @telemetry_html
 
   def section(id), do: Enum.find(@sections, &(&1.id == id))
 
@@ -207,18 +409,84 @@ defmodule HangmanWeb.Xray do
 
   @doc "Live facts about the BEAM process serving this LiveView."
   def runtime(pid \\ self()) do
-    {:memory, memory} = Process.info(pid, :memory)
+    [memory: memory, reductions: reductions] = Process.info(pid, [:memory, :reductions])
     {uptime_ms, _} = :erlang.statistics(:wall_clock)
 
     %{
       pid: inspect(pid),
       memory_kb: Float.round(memory / 1024, 1),
+      reductions: reductions,
+      chain: chain(pid),
       processes: :erlang.system_info(:process_count),
       schedulers: System.schedulers_online(),
       uptime: format_uptime(div(uptime_ms, 1000)),
       versions: "Elixir #{System.version()} · OTP #{:erlang.system_info(:otp_release)}"
     }
   end
+
+  @doc """
+  The supervisors above `pid`, root first, read from the `$ancestors` that
+  OTP's proc_lib records in every process it starts.
+  """
+  def chain(pid) do
+    {:dictionary, dict} = Process.info(pid, :dictionary)
+
+    ancestors =
+      dict
+      |> Keyword.get(:"$ancestors", [])
+      |> Enum.reverse()
+      |> Enum.map(&describe/1)
+      |> Enum.with_index()
+      |> Enum.map(&label/1)
+
+    [%{name: "the BEAM", kind: "the virtual machine"} | ancestors] ++
+      [%{name: "you, " <> inspect(pid), kind: "LiveView process"}]
+  end
+
+  defp describe(name) when is_atom(name),
+    do: %{name: inspect(name), kind: kind(Process.whereis(name))}
+
+  defp describe(pid) when is_pid(pid) do
+    case Process.info(pid, :registered_name) do
+      {:registered_name, name} when is_atom(name) and name != [] ->
+        %{name: inspect(name), kind: kind(pid)}
+
+      _ ->
+        %{name: inspect(pid), kind: kind(pid)}
+    end
+  end
+
+  defp describe(other), do: %{name: inspect(other), kind: "process"}
+
+  # Unnamed processes in the chain: the application master at the root, and
+  # the socket's partition supervisors (one per scheduler) further down.
+  defp label({%{name: "#PID" <> _, kind: "process"}, 0}),
+    do: %{name: ":hangman", kind: "OTP application"}
+
+  defp label({%{name: "#PID" <> _ = name, kind: "supervisor" <> _ = kind}, _}),
+    do: %{name: name, kind: "partition " <> kind}
+
+  defp label({node, _}), do: node
+
+  defp kind(pid) when is_pid(pid) do
+    case Process.info(pid, [:dictionary, :links]) do
+      [dictionary: dict, links: links] -> kind(Keyword.get(dict, :"$initial_call"), links)
+      _ -> "process"
+    end
+  end
+
+  defp kind(_), do: "process"
+
+  defp kind({:supervisor, Supervisor.Default, _}, links), do: supervises(links)
+  defp kind({:supervisor, mod, _}, links), do: "#{short(mod)}, #{supervises(links)}"
+  defp kind({:application_master, _, _}, _), do: "starts the :hangman app"
+  defp kind({mod, _, _}, _), do: short(mod)
+  defp kind(_, _), do: "process"
+
+  # Links minus the parent: roughly how many children it supervises.
+  defp supervises(links), do: "supervisor of #{max(length(links) - 1, 1)}"
+
+  defp short(mod), do: mod |> inspect() |> String.replace_prefix(":", "")
 
   defp format_uptime(s) when s < 3600, do: "#{div(s, 60)}m #{rem(s, 60)}s"
   defp format_uptime(s) when s < 86_400, do: "#{div(s, 3600)}h #{div(rem(s, 3600), 60)}m"

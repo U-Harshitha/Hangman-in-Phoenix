@@ -30,4 +30,15 @@ defmodule HangmanWeb.XrayTest do
     assert facts.pid == inspect(self())
     assert facts.processes > 0
   end
+
+  test "the supervision chain runs from the BEAM down to the caller" do
+    chain = Xray.chain(self())
+    assert hd(chain).name == "the BEAM"
+    assert List.last(chain).name =~ inspect(self())
+  end
+
+  test "line counts are taken at compile time" do
+    assert Xray.loc().elixir > 500
+    assert Xray.loc().js > 100
+  end
 end

@@ -5,6 +5,8 @@ defmodule Hangman.Application do
 
   @impl true
   def start(_type, _args) do
+    HangmanWeb.Xray.Telemetry.attach()
+
     children = [
       {Phoenix.PubSub, name: Hangman.PubSub},
       HangmanWeb.Endpoint

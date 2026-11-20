@@ -11,75 +11,129 @@ const $$ = (root, sel) => Array.from(root.querySelectorAll(sel))
 
 // ── TV guide (menu) ────────────────────────────────────────────────────
 
+// The title is written, then annotated: letters land, the haldi marker
+// sweeps under them, the margin note is "handwritten" and its arrow drawn.
+let introPlayed = false
+
 export const Intro = {
   mounted() {
-    const letters = $$(this.el, ".hero-letter")
-    const tl = gsap.timeline({defaults: {ease: "power3.out"}})
+    const letters = $$(this.el, ".title-letter")
+    const note = $(this.el, ".title-note")
+    const mark = $(this.el, ".title-mark")
+    const arrows = $$(this.el, ".title-arrow path")
+    const rest = $$(this.el, "[data-intro]")
+    const cards = $$(this.el, "[data-card]")
 
-    tl.from(letters, {
-      yPercent: 110,
-      rotate: (i) => (i % 2 ? 9 : -9),
-      opacity: 0,
-      duration: 0.85,
-      stagger: 0.045,
-      ease: "back.out(1.7)",
-    })
-      .from($$(this.el, "[data-intro]"), {y: 24, opacity: 0, duration: 0.65, stagger: 0.07}, "-=0.55")
-      .from($$(this.el, "[data-card]"), {x: -16, opacity: 0, duration: 0.45, stagger: 0.05}, "-=0.5")
-      .add(() => gsap.set([...letters, ...$$(this.el, "[data-intro],[data-card]")], {clearProps: "all"}))
-
-    // Letters lean toward the pointer, like a studio audience leaning in.
-    this.onMove = (e) => {
-      if (reducedMotion()) return
-      letters.forEach((el) => {
-        const r = el.getBoundingClientRect()
-        const dx = (e.clientX - (r.left + r.width / 2)) / window.innerWidth
-        const dy = (e.clientY - (r.top + r.height / 2)) / window.innerHeight
-        gsap.to(el, {x: dx * 16, y: dy * 12, rotate: dx * 6, duration: 0.8, ease: "power2.out", overwrite: "auto"})
-      })
+    for (const path of arrows) {
+      const len = Math.ceil(path.getTotalLength())
+      gsap.set(path, {strokeDasharray: len, strokeDashoffset: len})
     }
-    window.addEventListener("pointermove", this.onMove, {passive: true})
+
+    this.tl = gsap
+      .timeline({
+        defaults: {ease: "power3.out"},
+        onComplete: () => gsap.set([...letters, ...rest, ...cards, note, mark], {clearProps: "all"}),
+      })
+      .from(letters, {yPercent: 60, opacity: 0, duration: 0.7, stagger: 0.035, ease: "power4.out"})
+      .from(mark, {scaleX: 0, duration: 0.55, ease: "power2.inOut"}, "-=0.35")
+      .fromTo(note, {clipPath: "inset(-20% 100% -20% 0)"}, {clipPath: "inset(-20% 0% -20% 0)", duration: 0.75, ease: "power1.inOut"}, "-=0.15")
+      .to(arrows, {strokeDashoffset: 0, duration: 0.35, stagger: 0.2, ease: "power2.out"}, "-=0.2")
+      .from(rest, {y: 18, opacity: 0, duration: 0.6, stagger: 0.07}, 0.25)
+      .from(cards, {x: -12, opacity: 0, duration: 0.4, stagger: 0.045}, 0.5)
+
+    // Coming back from an episode shouldn't replay the whole opening.
+    if (introPlayed) this.tl.timeScale(2.2)
+    introPlayed = true
   },
 
   destroyed() {
-    window.removeEventListener("pointermove", this.onMove)
+    this.tl?.kill()
   },
 }
 
-// ── Board (tiles, keyboard, takes) ─────────────────────────────────────
+// The remote's cursor: one highlight that glides to whichever channel is
+// selected, instead of each row lighting up on its own.
+export const Guide = {
+  mounted() {
+    this.cursor = $(this.el, "#guide-cursor")
+    this.move(true)
+    this.onResize = () => this.move(true)
+    window.addEventListener("resize", this.onResize)
+    document.fonts?.ready.then(() => this.move(true))
+  },
+
+  updated() {
+    this.move(false)
+  },
+
+  destroyed() {
+    window.removeEventListener("resize", this.onResize)
+  },
+
+  move(instant) {
+    const row = $(this.el, ".guide-row.is-selected")
+    if (!row || !this.cursor) return
+    const to = {y: row.offsetTop, height: row.offsetHeight}
+    if (instant || reducedMotion()) return gsap.set(this.cursor, to)
+    gsap.to(this.cursor, {...to, duration: 0.42, ease: "power3.out", overwrite: true})
+    // The channel number flickers like an OSD changing.
+    gsap.fromTo($(row, ".guide-ch"), {opacity: 0.15}, {opacity: 1, duration: 0.35, ease: "steps(4)", clearProps: "opacity"})
+  },
+}
+
+// ── Board (answer slots, keyboard, takes) ──────────────────────────────
 
 export const Board = {
   mounted() {
     this.entrance(true)
     this.handleEvent("fx", (fx) => this.fx(fx))
+
+    // Physical keys press the on-screen keycap immediately, before the
+    // server has even heard about it.
+    this.onDown = (e) => {
+      if (e.repeat || e.metaKey || e.ctrlKey || e.altKey || e.key.length !== 1) return
+      const key = $(this.el, `[data-key="${e.key.toLowerCase()}"]`)
+      if (key && !key.disabled) key.classList.add("is-down")
+    }
+    this.onUp = (e) => {
+      if (e.key?.length === 1) $(this.el, `[data-key="${e.key.toLowerCase()}"]`)?.classList.remove("is-down")
+    }
+    window.addEventListener("keydown", this.onDown)
+    window.addEventListener("keyup", this.onUp)
   },
 
-  // Tiles and keys slide in once the episode title card clears.
+  destroyed() {
+    window.removeEventListener("keydown", this.onDown)
+    window.removeEventListener("keyup", this.onUp)
+  },
+
+  // Slots and keys settle in once the episode title card clears.
   entrance(first) {
     const tl = gsap.timeline({delay: 1.15})
     if (first) {
-      gsap.from($$(this.el, ".set-panel, .clue-card, .word-card, .episode-bar"), {
-        y: 26,
+      gsap.from($$(this.el, ".set-tv, .clue-card, .word-card, .keyboard, .episode-bar"), {
+        y: 22,
         opacity: 0,
         duration: 0.7,
-        stagger: 0.08,
+        stagger: 0.07,
         ease: "power3.out",
         clearProps: "all",
       })
     }
     tl.from($$(this.el, ".tile"), {
-      y: -26,
-      rotateX: -90,
+      scale: 0.6,
       opacity: 0,
-      duration: 0.55,
-      stagger: 0.04,
+      duration: 0.45,
+      stagger: 0.035,
       ease: "back.out(2)",
       clearProps: "all",
-    }).from(
-      $$(this.el, ".key"),
-      {y: 12, opacity: 0, scale: 0.9, duration: 0.4, stagger: {each: 0.01, from: "center"}, ease: "power2.out", clearProps: "all"},
-      "<0.1",
-    )
+    })
+      .from($$(this.el, ".tile b"), {y: 12, opacity: 0, duration: 0.4, stagger: 0.03, ease: "back.out(2.4)", clearProps: "all"}, "<0.2")
+      .from(
+        $$(this.el, ".key"),
+        {y: -6, opacity: 0, duration: 0.35, stagger: {each: 0.008, from: "center"}, ease: "power2.out", clearProps: "all"},
+        "<0.05",
+      )
   },
 
   fx({kind, letter, positions = [], lives}) {
@@ -92,54 +146,57 @@ export const Board = {
 
       case "hit":
       case "hint":
-        this.flipTiles(positions)
-        if (key) gsap.fromTo(key, {scale: 1.25}, {scale: 1, duration: 0.6, ease: "elastic.out(1, 0.4)", clearProps: "transform"})
+        this.popCaps(positions)
+        if (key) gsap.fromTo(key, {y: 3}, {y: 0, duration: 0.5, ease: "elastic.out(1, 0.45)", clearProps: "transform"})
         if (kind === "hint") this.cutLamp(lives + 1)
         return
 
       case "miss":
-        if (key) gsap.fromTo(key, {x: -4}, {x: 0, duration: 0.5, ease: "elastic.out(1.2, 0.3)", clearProps: "transform"})
-        gsap.fromTo(word, {x: -12}, {x: 0, duration: 0.6, ease: "elastic.out(1.4, 0.25)", clearProps: "transform"})
+        gsap.fromTo(word, {x: -10}, {x: 0, duration: 0.6, ease: "elastic.out(1.4, 0.25)", clearProps: "transform"})
         this.cutLamp(lives + 1)
         return
 
       case "repeat":
-        if (key) gsap.fromTo(key, {rotate: -8}, {rotate: 0, duration: 0.5, ease: "elastic.out(1.5, 0.3)", clearProps: "transform"})
+        if (key) gsap.fromTo(key, {rotate: -6}, {rotate: 0, duration: 0.5, ease: "elastic.out(1.5, 0.3)", clearProps: "transform"})
         gsap.fromTo("#message", {x: -6}, {x: 0, duration: 0.4, ease: "elastic.out(1.5, 0.3)", clearProps: "transform"})
         return
 
       case "win":
-        gsap.to($$(this.el, ".tile:not(.tile--gap)"), {
-          y: -16,
-          duration: 0.28,
+        gsap.to($$(this.el, ".tile b"), {
+          y: -12,
+          duration: 0.24,
           ease: "power2.out",
           yoyo: true,
           repeat: 1,
-          stagger: 0.05,
+          stagger: 0.045,
           clearProps: "transform",
         })
         return
 
       case "lose":
-        this.flipTiles($$(this.el, ".tile.is-missed").map((t) => Number(t.dataset.index)))
-        gsap.fromTo(word, {x: -18}, {x: 0, duration: 0.9, ease: "elastic.out(1.6, 0.2)", clearProps: "transform"})
+        this.popCaps(
+          $$(this.el, ".tile.is-missed").map((t) => Number(t.dataset.index)),
+          0.2,
+        )
+        gsap.fromTo(word, {x: -14}, {x: 0, duration: 0.9, ease: "elastic.out(1.6, 0.2)", clearProps: "transform"})
         return
     }
   },
 
-  flipTiles(positions) {
-    const tiles = positions.map((i) => $(this.el, `.tile[data-index="${i}"]`)).filter(Boolean)
+  // A found letter rises out of its slot as a keycap and clicks into place.
+  popCaps(positions, delay = 0) {
+    const caps = positions.map((i) => $(this.el, `.tile[data-index="${i}"] b`)).filter(Boolean)
     gsap.fromTo(
-      tiles,
-      {rotateX: -100, y: -10, opacity: 0.2},
-      {rotateX: 0, y: 0, opacity: 1, duration: 0.6, stagger: 0.07, ease: "back.out(2.2)", clearProps: "all"},
+      caps,
+      {y: 14, scale: 0.82, opacity: 0},
+      {y: 0, scale: 1, opacity: 1, duration: 0.42, delay, stagger: 0.07, ease: "back.out(2.6)", clearProps: "all"},
     )
   },
 
-  // The "take" lamp that just went out flares, like a blown bulb.
+  // The tally lamp that just went out flares, like a blown bulb.
   cutLamp(n) {
     const lamp = $(this.el, `[data-lamp="${n}"]`)
-    if (lamp) gsap.fromTo(lamp, {scale: 1.8, filter: "brightness(2.2)"}, {scale: 1, filter: "brightness(1)", duration: 0.7, ease: "power3.out", clearProps: "all"})
+    if (lamp) gsap.fromTo(lamp, {scale: 2, filter: "brightness(2.2)"}, {scale: 1, filter: "brightness(1)", duration: 0.7, ease: "power3.out", clearProps: "all"})
   },
 }
 
@@ -298,6 +355,7 @@ export const Result = {
     const won = this.el.dataset.status === "won"
     const points = $(this.el, "[data-count]")
     const items = $$(card, ".kicker, .result-title, .result-line, .result-label, .result-word, .result-fact, .result-stat, .result-actions")
+    const caps = $$(card, ".rw-cap")
     const all = [this.el, card, ...items]
 
     // Explicit end states + clearProps: the dialog can never get stuck
@@ -306,6 +364,7 @@ export const Result = {
       .fromTo(this.el, {opacity: 0}, {opacity: 1, duration: 0.35})
       .fromTo(card, {y: 40, scale: 0.94, opacity: 0}, {y: 0, scale: 1, opacity: 1, duration: 0.6, ease: "back.out(1.6)"}, "<")
       .fromTo(items, {y: 14, opacity: 0}, {y: 0, opacity: 1, duration: 0.45, stagger: 0.05, ease: "power2.out"}, "-=0.35")
+      .fromTo(caps, {y: 10, opacity: 0}, {y: 0, opacity: 1, duration: 0.35, stagger: 0.03, ease: "back.out(2.4)", clearProps: "all"}, "-=0.5")
       .add(() => $(this.el, "#next")?.focus({preventScroll: true}))
 
     if (points) {
