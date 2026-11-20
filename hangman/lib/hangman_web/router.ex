@@ -10,12 +10,13 @@ defmodule HangmanWeb.Router do
     plug :put_secure_browser_headers
   end
 
-  scope "/", HangmanWeb do
-    pipe_through :browser
+  scope "/hangman", HangmanWeb do
+    get "/health", HealthController, :show
 
-    get "/", PageController, :home
-    get "/game/new", GameController, :new
-    get "/game", GameController, :show
-    post "/game", GameController, :update
+    pipe_through :browser
+    live "/", GameLive, :index
   end
+
+  # Visiting the bare host (e.g. the Render URL) lands on the game.
+  get "/", HangmanWeb.HealthController, :to_game
 end

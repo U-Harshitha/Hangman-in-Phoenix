@@ -1,0 +1,9 @@
+{
+  "name": "hangman-assets",
+  "private": true,
+  "description": "Front-end packages bundled by Phoenix's esbuild (see config/config.exs).",
+  "dependencies": {
+    "gsap": "3.15.1",
+    "three": "0.187.0"
+  }
+}

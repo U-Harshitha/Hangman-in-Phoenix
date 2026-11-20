@@ -1,0 +1,23 @@
+# Render Blueprint: https://render.com/docs/blueprint-spec
+# Render → New → Blueprint → pick this repo → Apply. That's it.
+services:
+  - type: web
+    name: hangman-in-phoenix
+    runtime: docker
+    plan: free
+    dockerContext: ./hangman
+    dockerfilePath: ./hangman/Dockerfile
+    healthCheckPath: /hangman/health
+    autoDeploy: true
+    buildFilter:
+      paths:
+        - hangman/**
+    envVars:
+      - key: SECRET_KEY_BASE
+        generateValue: true
+      # Origins allowed to open the LiveView connection (comma separated).
+      # Must include the portfolio domain that proxies /hangman.
+      - key: CHECK_ORIGINS
+        value: //harshitha-upadhyayula.vercel.app
+      - key: PORTFOLIO_URL
+        value: https://harshitha-upadhyayula.vercel.app

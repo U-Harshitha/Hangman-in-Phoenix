@@ -1,5 +1,378 @@
-@import "tailwindcss/base";
-@import "tailwindcss/components";
-@import "tailwindcss/utilities";
+@import "tailwindcss" source(none);
+@source "../css";
+@source "../js";
+@source "../../lib/hangman_web";
 
-/* This file is for your main application CSS */
+/* LiveView state variants */
+@custom-variant phx-click-loading (.phx-click-loading&, .phx-click-loading &);
+@custom-variant phx-submit-loading (.phx-submit-loading&, .phx-submit-loading &);
+@custom-variant phx-change-loading (.phx-change-loading&, .phx-change-loading &);
+
+@theme {
+  --font-sans: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Fraunces", ui-serif, Georgia, serif;
+
+  --color-ink: #0b0c12;
+  --color-night: #12131c;
+  --color-raised: #191a26;
+  --color-line: rgb(255 255 255 / 0.09);
+  --color-chalk: #f5eedf;
+  --color-muted: #9a98a8;
+  --color-ember: #ff6a2b;
+  --color-flame: #ffa24a;
+  --color-gold: #ffd479;
+  --color-miss: #ff5470;
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    @apply min-h-dvh bg-ink font-sans text-chalk antialiased;
+    background-image:
+      radial-gradient(60rem 40rem at 85% -10%, rgb(255 106 43 / 0.14), transparent 60%),
+      radial-gradient(50rem 30rem at -10% 110%, rgb(255 212 121 / 0.08), transparent 60%);
+  }
+
+  ::selection {
+    background: rgb(255 106 43 / 0.35);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-gold);
+    outline-offset: 3px;
+  }
+
+  kbd {
+    @apply rounded-md border border-line bg-raised px-1.5 py-0.5 font-sans text-[0.75em] font-medium text-chalk;
+  }
+
+  button {
+    cursor: pointer;
+  }
+
+  button:disabled {
+    cursor: default;
+  }
+}
+
+/* Film-grain overlay keeps the gradients from banding and adds texture */
+.grain {
+  opacity: 0.06;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+}
+
+/* ── Top bar ─────────────────────────────────────────────────────────── */
+
+.brand {
+  @apply font-display text-lg font-bold tracking-tight;
+}
+
+.brand em {
+  @apply font-medium text-muted italic;
+}
+
+.back-link {
+  @apply inline-flex items-center gap-1.5 rounded-full border border-line px-3 py-1.5 text-sm text-muted transition hover:border-chalk/30 hover:text-chalk;
+}
+
+.stats {
+  @apply flex items-center gap-4 text-right sm:gap-6;
+}
+
+.stats dt {
+  @apply text-[0.65rem] font-medium tracking-[0.18em] text-muted uppercase;
+}
+
+.stats dd {
+  @apply font-display text-lg leading-tight font-bold tabular-nums;
+}
+
+/* ── Shared pieces ───────────────────────────────────────────────────── */
+
+.panel {
+  @apply rounded-3xl border border-line bg-night/70 shadow-[0_30px_80px_-40px_rgb(0_0_0/0.8)] backdrop-blur-md;
+}
+
+.panel-label {
+  @apply text-xs font-semibold tracking-[0.2em] text-muted uppercase;
+}
+
+.kicker {
+  @apply text-xs font-semibold tracking-[0.22em] text-flame uppercase;
+}
+
+.chip {
+  @apply rounded-full bg-ember/15 px-3 py-1 text-xs font-semibold text-flame;
+}
+
+.chip--ghost {
+  @apply bg-transparent text-muted ring-1 ring-line;
+}
+
+.btn-primary {
+  @apply inline-flex items-center gap-2 rounded-full bg-gradient-to-br from-flame to-ember px-6 py-3 font-semibold text-ink shadow-[0_10px_40px_-10px_rgb(255_106_43/0.7)] transition will-change-transform hover:-translate-y-0.5 hover:shadow-[0_16px_50px_-12px_rgb(255_106_43/0.9)] active:translate-y-0;
+}
+
+.btn-ghost {
+  @apply inline-flex items-center gap-2 rounded-full border border-line px-5 py-2.5 text-sm font-medium text-chalk transition hover:border-chalk/30 hover:bg-white/5 disabled:opacity-40 disabled:hover:bg-transparent;
+}
+
+.kbd-dark {
+  @apply border-ink/20 bg-ink/15 text-ink;
+}
+
+.toast {
+  @apply mb-2 w-80 max-w-[calc(100vw-2rem)] cursor-pointer rounded-2xl border border-line bg-raised px-4 py-3 text-sm shadow-xl;
+}
+
+.toast--error {
+  @apply border-miss/40;
+}
+
+/* ── Menu ────────────────────────────────────────────────────────────── */
+
+.hero-title {
+  @apply mt-4 font-display leading-[0.85] font-black tracking-[-0.04em];
+  font-size: clamp(4rem, 12vw, 8.25rem);
+  white-space: nowrap;
+  font-variation-settings: "opsz" 144;
+}
+
+.hero-letter {
+  display: inline-block;
+  background: linear-gradient(180deg, var(--color-chalk) 30%, var(--color-flame) 140%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.stat-big {
+  @apply font-display text-3xl font-bold tabular-nums;
+}
+
+.choice {
+  @apply relative flex flex-col items-start gap-1 rounded-2xl border border-line bg-raised/60 p-4 text-left transition duration-200 hover:-translate-y-0.5 hover:border-chalk/25;
+}
+
+.choice.is-selected {
+  @apply border-ember/70 bg-ember/10 shadow-[0_0_0_1px_rgb(255_106_43/0.4),0_20px_40px_-25px_rgb(255_106_43/0.8)];
+}
+
+.choice-index {
+  @apply text-[0.7rem] font-semibold text-muted tabular-nums;
+}
+
+.choice.is-selected .choice-index {
+  @apply text-flame;
+}
+
+.choice-label {
+  @apply font-display text-xl font-bold;
+}
+
+.choice-blurb {
+  @apply text-xs leading-snug text-muted;
+}
+
+.segmented {
+  @apply grid grid-cols-3 gap-1 rounded-2xl border border-line bg-ink/60 p-1;
+}
+
+.segmented button {
+  @apply flex flex-col items-center gap-0.5 rounded-xl px-2 py-2.5 text-sm text-muted transition hover:text-chalk;
+}
+
+.segmented button.is-selected {
+  @apply bg-chalk text-ink;
+}
+
+/* ── Board ───────────────────────────────────────────────────────────── */
+
+.gallows {
+  @apply h-auto w-full;
+  overflow: visible;
+}
+
+.gallows path,
+.gallows circle {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.gallows-frame path {
+  stroke: rgb(245 238 223 / 0.55);
+  stroke-width: 5;
+}
+
+.gallows-figure > path,
+.gallows-figure > circle {
+  stroke: var(--color-flame);
+  stroke-width: 5;
+  filter: drop-shadow(0 0 6px rgb(255 106 43 / 0.55));
+}
+
+.gallows-face path {
+  stroke: var(--color-chalk);
+  stroke-width: 3;
+}
+
+.gallows-face {
+  opacity: 0;
+}
+
+.flames {
+  @apply flex items-end justify-center gap-2 sm:gap-2.5;
+}
+
+.flame svg {
+  @apply h-6 w-[1.125rem] sm:h-8 sm:w-6;
+  overflow: visible;
+}
+
+.flame path {
+  fill: var(--color-flame);
+  filter: drop-shadow(0 0 8px rgb(255 140 50 / 0.8));
+  transform-origin: 50% 90%;
+  animation: flicker 1.6s ease-in-out infinite alternate;
+  transition:
+    fill 0.4s,
+    filter 0.4s,
+    opacity 0.4s;
+}
+
+.flame:nth-child(2n) path {
+  animation-duration: 1.3s;
+  animation-delay: -0.4s;
+}
+
+.flame:nth-child(3n) path {
+  animation-duration: 1.9s;
+  animation-delay: -0.9s;
+}
+
+.flame.is-out path {
+  fill: rgb(255 255 255 / 0.1);
+  filter: none;
+  animation: none;
+}
+
+@keyframes flicker {
+  0% {
+    transform: scale(1, 1) skewX(0deg);
+  }
+  50% {
+    transform: scale(0.96, 1.06) skewX(-2deg);
+  }
+  100% {
+    transform: scale(1.03, 0.97) skewX(2deg);
+  }
+}
+
+.word {
+  @apply flex min-h-16 flex-wrap justify-center gap-x-1.5 gap-y-3 sm:gap-x-2.5;
+  perspective: 600px;
+}
+
+.tile {
+  @apply grid h-11 w-9 place-items-center rounded-xl border-b-[3px] border-chalk/25 bg-white/[0.04] font-display text-2xl font-bold uppercase sm:h-16 sm:w-12 sm:text-4xl;
+  transform-style: preserve-3d;
+}
+
+.tile.is-revealed {
+  @apply border-flame bg-gradient-to-b from-white/[0.08] to-transparent text-chalk;
+}
+
+.tile.is-missed {
+  @apply border-miss/70 text-miss;
+}
+
+.tile--gap {
+  @apply w-4 border-transparent bg-transparent sm:w-6;
+}
+
+.message {
+  @apply min-h-6 text-sm text-muted transition-colors;
+}
+
+.message--hit {
+  @apply text-gold;
+}
+
+.message--miss {
+  @apply text-miss;
+}
+
+.keyboard {
+  @apply flex flex-col items-center gap-1.5 sm:gap-2;
+}
+
+.keyboard-row {
+  @apply flex w-full justify-center gap-1 sm:gap-1.5;
+}
+
+.key {
+  @apply grid h-11 max-w-12 flex-1 place-items-center rounded-xl border border-line bg-raised text-base font-semibold uppercase transition-[background,border,color,transform,opacity] duration-200 select-none sm:h-14 sm:max-w-14 sm:text-lg;
+  touch-action: manipulation;
+}
+
+.key--unused:not(:disabled) {
+  @apply hover:-translate-y-0.5 hover:border-flame/60 hover:bg-ember/10 active:translate-y-0;
+}
+
+.key--hit {
+  @apply border-transparent bg-gradient-to-b from-gold to-flame text-ink;
+}
+
+.key--miss {
+  @apply bg-transparent text-muted/50 line-through decoration-miss/70 decoration-2;
+}
+
+.key:disabled.key--unused {
+  @apply opacity-40;
+}
+
+/* ── Result dialog ───────────────────────────────────────────────────── */
+
+.result-backdrop {
+  @apply fixed inset-0 z-40 grid place-items-center bg-ink/60 p-4 backdrop-blur-sm;
+}
+
+.result-card {
+  @apply w-full max-w-md bg-raised/95 p-7 text-center sm:p-9;
+}
+
+.result-title {
+  @apply mt-3 font-display text-4xl leading-tight font-black tracking-tight sm:text-5xl;
+}
+
+.result-word {
+  @apply mt-1 font-display text-3xl font-bold tracking-wide text-flame capitalize;
+}
+
+[data-status="lost"] .result-word {
+  @apply text-miss;
+}
+
+.result-stat {
+  @apply rounded-2xl border border-line bg-ink/50 px-2 py-3;
+}
+
+.result-stat dt {
+  @apply text-[0.65rem] font-semibold tracking-[0.18em] text-muted uppercase;
+}
+
+.result-stat dd {
+  @apply font-display text-2xl font-bold tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flame path {
+    animation: none;
+  }
+}

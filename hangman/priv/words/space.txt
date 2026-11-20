@@ -1,0 +1,40 @@
+andromeda
+asteroid
+astronaut
+atmosphere
+aurora
+black hole
+comet
+constellation
+cosmos
+crater
+eclipse
+equinox
+galaxy
+gravity
+jupiter
+lunar
+mercury
+meteor
+milky way
+nebula
+neptune
+observatory
+orbit
+planet
+pulsar
+quasar
+rocket
+satellite
+saturn
+solar flare
+solstice
+spacecraft
+starlight
+supernova
+telescope
+universe
+uranus
+venus
+wormhole
+zenith
